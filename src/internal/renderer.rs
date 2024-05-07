@@ -1,5 +1,7 @@
 use wgpu::{BindGroupLayout, RenderPipeline};
 
+use crate::engine::texture_loader::{initialize_load_textures, preload_textures};
+
 fn create_render_pipeline(
     name: &str,
     device: &wgpu::Device,
@@ -69,11 +71,17 @@ fn create_render_pipeline(
 pub struct MainRenderer {
     surface_pipeline: RenderPipeline,
     object_pipeline: RenderPipeline,
-    material_bind_group_layout: BindGroupLayout
+    material_bind_group_layout: BindGroupLayout,
+    texture_format: wgpu::TextureFormat,
+    texture_bindgroup: wgpu::BindGroup,
+    texture_bindgroup_layout: wgpu::BindGroupLayout
 }
 
 impl MainRenderer {
-    pub fn new(device: &wgpu::Device) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, texture_format: wgpu::TextureFormat, camera_bindgroup_layout: &BindGroupLayout) -> Self {
+        preload_textures(device, queue, texture_format);
+
+        let (texture_bindgroups, texture_layouts) = initialize_load_textures(device, queue, texture_format);
 
         let material_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("Main renderer material bind group layout"),
@@ -83,7 +91,7 @@ impl MainRenderer {
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Texture {
                         multisampled: false,
-                        view_dimension: wgpu::TextureDimension::D2,
+                        view_dimension: wgpu::TextureViewDimension::D2,
                         sample_type: wgpu::TextureSampleType::Float { filterable: true }
                     },
                     count: None
@@ -128,6 +136,18 @@ impl MainRenderer {
                 }
             ]
         });
+
+        let surface_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("surface pipeline layout"),
+            bind_group_layouts: &[&texture_layouts, &camera_bindgroup_layout],
+            push_constant_ranges: &[]
+        });
+
+        let surface_pipeline = create_render_pipeline(
+            "surface_pipeline",
+            device,
+
+        )
 
         Self {
 

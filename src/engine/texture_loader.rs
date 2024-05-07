@@ -66,7 +66,7 @@ pub static LOADED_TEXTURES: Lazy<Mutex<HashMap<String, LoadedTextureData>>> = La
     Mutex::new(m)
 });
 
-pub async fn preload_textures(
+pub fn preload_textures(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
     format: wgpu::TextureFormat
