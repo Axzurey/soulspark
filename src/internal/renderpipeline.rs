@@ -1,6 +1,6 @@
 use std::fs;
 
-pub fn create_renderpipeline(
+pub fn create_render_pipeline(
     name: &str,
     device: &wgpu::Device,
     pipeline_layout: &wgpu::PipelineLayout,
