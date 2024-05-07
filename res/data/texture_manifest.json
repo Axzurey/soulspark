@@ -1,0 +1,17 @@
+[
+    {
+        "path": "textures/dirt.png",
+        "alias": "dirt",
+        "type": "diffuse"
+    },
+    {
+        "path": "textures/grass_side.png",
+        "alias": "grass-side",
+        "type": "diffuse"
+    },
+    {
+        "path": "textures/grass_top.png",
+        "alias": "grass-top",
+        "type": "diffuse"
+    }
+]

@@ -1,0 +1,32 @@
+# Blender 3.4.1 MTL File: 'hk416_fade I.blend'
+# www.blender.org
+
+newmtl Material
+Ns 360.000000
+Ka 0.647059 0.647059 0.647059
+Kd 0.033103 0.033103 0.033103
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 3
+
+newmtl Material.002
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.031063 0.031063 0.031063
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+
+newmtl Material.003
+Ns 250.000000
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd C:/Users/Phxie/Documents/development/roblox/[guns]/[fade I]/gradient.png
