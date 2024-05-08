@@ -87,7 +87,7 @@ impl MainRenderer {
             texture_format,
             None,
             &[SurfaceVertex::desc()],
-            "../shaders/surface.wgsl",
+            "../shaders/surfaceshader.wgsl",
             true,
             false
         );
