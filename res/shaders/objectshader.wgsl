@@ -9,9 +9,7 @@ struct VertexOutput {
     @location(6) t0: vec3<f32>,
     @location(7) t1: vec3<f32>,
     @location(8) t2: vec3<f32>,
-    @location(9) material_color: vec4<f32>,
-    @location(10) emission_strength: f32,
-    @location(11) use_material_color: u32
+    @location(9) diffuse_texture_index: u32
 };
 
 struct VertexInput {
@@ -20,29 +18,47 @@ struct VertexInput {
     @location(2) normal: vec3<f32>,
     @location(3) tangent: vec3<f32>,
     @location(4) bitangent: vec3<f32>,
+    @location(5) diffuse_texture_index: u32
 }
 
 struct InstanceInput {
-    @location(5) m0: vec4<f32>,
-    @location(6) m1: vec4<f32>,
-    @location(7) m2: vec4<f32>,
-    @location(8) m3: vec4<f32>,
-    @location(9) n0: vec3<f32>,
-    @location(10) n1: vec3<f32>,
-    @location(11) n2: vec3<f32>,
+    @location(6) m0: vec4<f32>,
+    @location(7) m1: vec4<f32>,
+    @location(8) m2: vec4<f32>,
+    @location(9) m3: vec4<f32>,
+    @location(10) n0: vec3<f32>,
+    @location(11) n1: vec3<f32>,
+    @location(12) n2: vec3<f32>,
 }
 
 struct Camera {
     view_pos: vec4<f32>,
     view_proj: mat4x4<f32>,
-    inv_view_proj: mat4x4<f32>,
 }
+
+@group(0) @binding(0)
+var diffuse_texture_array: binding_array<texture_2d<f32>>;
+
+@group(0) @binding(1)
+var diffuse_sampler_array: binding_array<sampler>;
+
+@group(0) @binding(2)
+var normal_texture_array: binding_array<texture_2d<f32>>;
+
+@group(0) @binding(3)
+var normal_sampler_array: binding_array<sampler>;
+
+@group(0) @binding(4)
+var emissive_texture_array: binding_array<texture_2d<f32>>;
+
+@group(0) @binding(5)
+var emissive_sampler_array: binding_array<sampler>;
 
 @group(1) @binding(0)
 var<uniform> camera: Camera;
 
 @vertex
-fn vs_main(model: VertexInput, instance: InstanceInput, material_info: MaterialInformationInput) -> VertexOutput {
+fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput {
 
     let size = vec3<f32>(instance.m0.x * 2.0, instance.m1.y * 2.0, instance.m2.z * 2.0);
 
@@ -83,8 +99,16 @@ fn vs_main(model: VertexInput, instance: InstanceInput, material_info: MaterialI
     out.t2 = t2;
     out.texture_stretch_u = length(texture_stretch_u);
     out.texture_stretch_v = length(texture_stretch_v);
-    out.material_color = material_info.material_color;
-    out.use_material_color = material_info.use_material_color;
-    out.emission_strength = material_info.emission_strength;
+    out.diffuse_texture_index = model.diffuse_texture_index;
     return out;
+}
+
+@fragment
+fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
+
+    let tex_coords = vec2<f32>(in.tex_coords.x * in.texture_stretch_u, in.tex_coords.y * in.texture_stretch_v);
+    
+    let object_color: vec4<f32> = textureSample(diffuse_texture_array[in.diffuse_texture_index], diffuse_sampler_array[in.diffuse_texture_index], tex_coords);
+
+    return object_color;
 }

@@ -2,6 +2,7 @@ use std::f32::consts::FRAC_PI_2;
 
 use cgmath::{perspective, InnerSpace, Matrix4, Point3, Rad, SquareMatrix, Vector2, Vector3};
 use instant::Duration;
+use wgpu::util::DeviceExt;
 use winit::{event::ElementState, keyboard::KeyCode};
 
 pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
@@ -24,12 +25,14 @@ pub struct Camera {
     yaw: Rad<f32>,
     pitch: Rad<f32>,
     
-    fov: Rad<f32>,
-    aspect_ratio: f32,
+    pub fov: Rad<f32>,
+    pub aspect_ratio: f32,
     znear: f32,
     zfar: f32,
 
-    controller: CameraController
+    pub controller: CameraController,
+    buffer: wgpu::Buffer,
+    pub bindgroup: wgpu::BindGroup
 }
 
 #[repr(C)]
@@ -54,23 +57,48 @@ impl Camera {
         yaw: f32,
         pitch: f32,
         aspect_ratio: f32,
-        fov: f32
+        fov: f32,
+        device: &wgpu::Device,
+        bindgroup_layout: &wgpu::BindGroupLayout
     ) -> Self {
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Camera Buffer"),
+            contents: bytemuck::cast_slice(&[CameraUniform {
+                view_position: [0., 0., 0., 1.],
+                view_proj: Matrix4::from_nonuniform_scale(0., 0., 0.).into()
+            }]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST
+        });
+
+        let bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: bindgroup_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding()
+                },
+            ],
+            label: Some("Camera bind group :)")
+        });
+
         Self {
             position: position.into(),
             
-            pitch: Rad(pitch),
-            yaw: Rad(yaw),
+            pitch: Rad(pitch.to_radians()),
+            yaw: Rad(yaw.to_radians()),
             aspect_ratio,
-            fov: Rad(fov),
+            fov: Rad(fov.to_radians()),
             
             znear: 0.1,
-            zfar: 200.,
+            zfar: 400.,
 
             projection_matrix: Matrix4::identity(),
             view_matrix: Matrix4::identity(),
             view_proj_matrix: Matrix4::identity(),
-            controller: CameraController::new()
+            controller: CameraController::new(),
+
+            buffer,
+            bindgroup
         }
     }
 
@@ -81,7 +109,7 @@ impl Camera {
         self.aspect_ratio = aspect;
     }
 
-    pub fn update_matrices(&mut self) {
+    pub fn update_matrices(&mut self, queue: &wgpu::Queue) {
         let (pitch_sin, pitch_cos) = self.pitch.0.sin_cos();
         let (yaw_sin, yaw_cos) = self.yaw.0.sin_cos();
 
@@ -98,6 +126,11 @@ impl Camera {
         self.projection_matrix = OPENGL_TO_WGPU_MATRIX * perspective(self.fov, self.aspect_ratio, self.znear, self.zfar);
     
         self.view_proj_matrix = self.projection_matrix * self.view_matrix;
+
+        queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[CameraUniform {
+            view_position: self.position.to_homogeneous().into(),
+            view_proj: self.view_proj_matrix.into()
+        }]))
     }
 
     pub fn look_vector(&self) -> Vector3<f32> {
@@ -115,6 +148,35 @@ impl Camera {
 
     pub fn up_vector(&self) -> Vector3<f32> {
         self.look_vector().cross(self.right_vector())
+    }
+
+    pub fn update_camera(&mut self, dt: f32) {
+
+        let lv = self.look_vector();
+        let rv = self.right_vector();
+
+        self.position += lv * self.controller.move_delta.z * dt * 10.0;
+        self.position += rv * self.controller.move_delta.x * dt * 10.0;
+
+        self.yaw += Rad(self.controller.mouse_delta.x) * self.controller.horizontal_sensitivity * dt;
+        self.pitch += Rad(-self.controller.mouse_delta.y) * self.controller.vertical_sensitivity * dt;
+
+        if self.controller.space_down {
+            self.position += Vector3::new(0.0, 10.0 * dt, 0.0);
+        }
+        if self.controller.shift_down {
+            self.position -= Vector3::new(0.0, 10.0 * dt, 0.0);
+        }
+
+        self.controller.mouse_delta.x = 0.0;
+        self.controller.mouse_delta.y = 0.0;
+
+        if self.pitch < -Rad(SAFE_FRAC_PI_2) {
+            self.pitch = -Rad(SAFE_FRAC_PI_2);
+        }
+        else if self.pitch > Rad(SAFE_FRAC_PI_2) {
+            self.pitch = Rad(SAFE_FRAC_PI_2);
+        }
     }
 }
 
@@ -173,54 +235,5 @@ impl CameraController {
 
     pub fn process_mouse_input(&mut self, dx: f64, dy: f64) {
         self.mouse_delta = Vector2::new(dx as f32, dy as f32);
-    }
-
-    pub fn look_vector(&self, camera: &mut Camera) -> Vector3<f32> {
-        let (sin_yaw, cos_yaw) = camera.yaw.0.sin_cos();
-        let (sin_pitch, cos_pitch) = camera.pitch.0.sin_cos();
-
-        Vector3::new(cos_yaw * cos_pitch, sin_pitch, sin_yaw * cos_pitch).normalize()
-    }
-
-    pub fn right_vector(&self, camera: &mut Camera) -> Vector3<f32> {
-        let (sin_yaw, cos_yaw) = camera.yaw.0.sin_cos();
-
-        Vector3::new(-sin_yaw, 0.0, cos_yaw).normalize()
-    }
-
-    pub fn up_vector(&self, camera: &mut Camera) -> Vector3<f32> {
-        self.look_vector(camera).cross(self.right_vector(camera))
-    }
-    
-    pub fn update_camera(&mut self, camera: &mut Camera, dt: Duration) {
-        let dt = dt.as_secs_f32();
-
-        //temporary, before i make player controller
-
-        let lv = self.look_vector(camera);
-        let rv = self.right_vector(camera);
-
-        camera.position += lv * self.move_delta.z * dt * 10.0;
-        camera.position += rv * self.move_delta.x * dt * 10.0;
-
-        camera.yaw += Rad(self.mouse_delta.x) * self.horizontal_sensitivity * dt;
-        camera.pitch += Rad(-self.mouse_delta.y) * self.vertical_sensitivity * dt;
-
-        if self.space_down {
-            camera.position += Vector3::new(0.0, 10.0 * dt, 0.0);
-        }
-        if self.shift_down {
-            camera.position -= Vector3::new(0.0, 10.0 * dt, 0.0);
-        }
-
-        self.mouse_delta.x = 0.0;
-        self.mouse_delta.y = 0.0;
-
-        if camera.pitch < -Rad(SAFE_FRAC_PI_2) {
-            camera.pitch = -Rad(SAFE_FRAC_PI_2);
-        }
-        else if camera.pitch > Rad(SAFE_FRAC_PI_2) {
-            camera.pitch = Rad(SAFE_FRAC_PI_2);
-        }
     }
 }

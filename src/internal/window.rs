@@ -1,25 +1,24 @@
 use std::sync::Arc;
+use instant::Duration;
 use winit::{event_loop::EventLoop, window::Window, window::WindowBuilder};
 
-use crate::state::workspace::Workspace;
+use crate::{internal::renderer::MainRenderer, state::workspace::Workspace};
 
 pub struct GameWindow<'a> {
     surface: wgpu::Surface<'a>,
-    device: wgpu::Device,
-    queue: wgpu::Queue,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
     surface_config: wgpu::SurfaceConfiguration,
-    window_size: winit::dpi::PhysicalSize<u32>,
-    window: Arc<Window>,
-    surface_format: wgpu::TextureFormat
+    pub window_size: winit::dpi::PhysicalSize<u32>,
+    pub window: Arc<Window>,
+    surface_format: wgpu::TextureFormat,
+    pub renderer: MainRenderer,
+    pub camera_bindgroup_layout: wgpu::BindGroupLayout
 }
 
 impl<'a> GameWindow<'a> {
-    pub async fn new() -> Self {
+    pub async fn new(window: Arc<Window>) -> Self {
         env_logger::init();
-
-        let event_loop = EventLoop::new().unwrap();
-
-        let window = Arc::new(WindowBuilder::new().build(&event_loop).unwrap());
 
         let window_size = window.inner_size();
 
@@ -73,6 +72,27 @@ impl<'a> GameWindow<'a> {
             desired_maximum_frame_latency: 2
         };
 
+        let camera_bindgroup_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }
+            ],
+            label: Some("camera bind group layout :)"),
+        });
+
+        let renderer = MainRenderer::new(
+            &device, &queue, surface_format, 
+            &camera_bindgroup_layout, (window_size.width, window_size.height)
+        );
+
         surface.configure(&device, &surface_config);
 
         Self {
@@ -82,14 +102,28 @@ impl<'a> GameWindow<'a> {
             window,
             window_size,
             surface_config,
-            surface_format
+            surface_format,
+            renderer,
+            camera_bindgroup_layout
         }
     }
 
-    fn on_next_frame(workspace: &mut Workspace) {
+    pub fn on_next_frame(&mut self, workspace: &mut Workspace, dt: f32) {
 
-        workspace.current_camera.update_matrices();
+        workspace.current_camera.update_camera(dt);
+        workspace.current_camera.update_matrices(&self.queue);
 
+        let mut output = self.surface.get_current_texture().unwrap();
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
+        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("Primary Encoder")
+        });
+
+        self.renderer.render_objects(&self.device, &mut output, &view, &mut encoder, &workspace.current_camera.bindgroup);
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+        
+        output.present();
     }
 }

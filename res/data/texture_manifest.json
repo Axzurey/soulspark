@@ -2,16 +2,19 @@
     {
         "path": "textures/dirt.png",
         "alias": "dirt",
-        "type": "diffuse"
+        "type": "diffuse",
+        "filter": "linear"
     },
     {
         "path": "textures/grass_side.png",
         "alias": "grass-side",
-        "type": "diffuse"
+        "type": "diffuse",
+        "filter": "linear"
     },
     {
         "path": "textures/grass_top.png",
         "alias": "grass-top",
-        "type": "diffuse"
+        "type": "diffuse",
+        "filter": "linear"
     }
 ]

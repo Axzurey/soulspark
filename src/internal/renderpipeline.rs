@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, path::Path};
 
 pub fn create_render_pipeline(
     name: &str,
@@ -13,7 +13,7 @@ pub fn create_render_pipeline(
 ) -> wgpu::RenderPipeline {
     let shader_descriptor = wgpu::ShaderModuleDescriptor {
         label: Some(shader_path),
-        source: wgpu::ShaderSource::Wgsl(fs::read_to_string(shader_path).unwrap().into())
+        source: wgpu::ShaderSource::Wgsl(fs::read_to_string(Path::new(shader_path)).unwrap().into())
     };
 
     let shader = device.create_shader_module(shader_descriptor);
