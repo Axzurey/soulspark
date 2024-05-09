@@ -193,6 +193,7 @@ impl MainRenderer {
                 render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
                 render_pass.set_vertex_buffer(1, buffers[i].slice(..));
+                render_pass.draw_indexed(0..mesh.num_elements, 0, 0..1);
             }
             i += 1;
         }

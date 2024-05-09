@@ -130,7 +130,7 @@ impl Camera {
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[CameraUniform {
             view_position: self.position.to_homogeneous().into(),
             view_proj: self.view_proj_matrix.into()
-        }]))
+        }]));
     }
 
     pub fn look_vector(&self) -> Vector3<f32> {
