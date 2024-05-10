@@ -111,12 +111,17 @@ fn create_cube(diffuse_texture_index: u32) -> (Vec<ModelVertex>, Vec<u32>) {
 
 cached_key! {
     LENGTH: SizedCache<String, Arc<Mesh>> = SizedCache::with_size(100);
-    Key = { format!("{}", p) };
+    Key = { format!("{}:{}", p, diffuse_texture_index) };
     fn create_primitive(p: Primitive, device: &wgpu::Device, diffuse_texture_index: u32) -> Arc<Mesh> = {
+        println!("{}", diffuse_texture_index);
         match p {
             Primitive::Cube => {
                 let (mut vertices, mut indices) = create_cube(diffuse_texture_index);
                 calculate_tangents_inplace_modelvertex(&mut vertices, &mut indices);
+
+                for i in 0..3 {
+                    println!("{:?}", vertices[i]);
+                }
     
                 let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                     label: Some(&format!("Chunk Vertex Buffer")),

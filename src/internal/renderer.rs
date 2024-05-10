@@ -14,11 +14,14 @@ pub struct MainRenderer {
     depth_texture: Texture,
     texture_bindgroup: wgpu::BindGroup,
     texture_bindgroup_layout: wgpu::BindGroupLayout,
+    surface_texture_format: wgpu::TextureFormat,
     pub render_storage: RenderStorage
 }
 
 impl MainRenderer {
-    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, texture_format: wgpu::TextureFormat, camera_bindgroup_layout: &BindGroupLayout, screendims: (u32, u32)) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, surface_texture_format: wgpu::TextureFormat, camera_bindgroup_layout: &BindGroupLayout, screendims: (u32, u32)) -> Self {
+        let texture_format = wgpu::TextureFormat::Rgba8UnormSrgb;
+        
         preload_textures(device, queue, texture_format);
 
         let (texture_bindgroup, texture_bindgroup_layout) = initialize_load_textures(device, queue, texture_format);
@@ -87,7 +90,7 @@ impl MainRenderer {
             "surface_pipeline",
             device,
             &surface_pipeline_layout,
-            texture_format,
+            surface_texture_format,
             Some(TextureFormat::Depth32Float),
             &[SurfaceVertex::desc()],
             "res/shaders/surfaceshader.wgsl",
@@ -105,7 +108,7 @@ impl MainRenderer {
             "object_pipeline",
             device,
             &object_pipeline_layout,
-            texture_format,
+            surface_texture_format,
             Some(TextureFormat::Depth32Float),
             &[ModelVertex::desc(), RawObject::desc()],
             "res/shaders/objectshader.wgsl",
@@ -123,6 +126,7 @@ impl MainRenderer {
             texture_bindgroup_layout,
             depth_texture,
             object_pipeline,
+            surface_texture_format,
             render_storage: RenderStorage::new()
         }
     }
@@ -185,8 +189,6 @@ impl MainRenderer {
         let mut i = 0;
 
         for obj in self.render_storage.get_objects() {
-            
-
             let model = obj.get_model();
 
             for mesh in &model.meshes {

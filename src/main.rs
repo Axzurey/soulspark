@@ -32,9 +32,10 @@ fn main() {
 
     {
         let obj1 = PrimitiveBuilder::new()
-            .set_diffuse_texture_by_name("grass-top")
+            .set_diffuse_texture_by_name("dirt")
             .set_primitive(&gamewindow.device, gen::primitive::Primitive::Cube)
-            .set_size(Vector3::new(5., 5., 5.))
+            .set_size(Vector3::new(5., 15., 55.))
+            .set_position(Vector3::new(10., 10., 10.))
             .finalize();
         gamewindow.renderer.render_storage.add_object(Arc::new(obj1));
 
@@ -42,13 +43,12 @@ fn main() {
             .set_diffuse_texture_by_name("grass-top")
             .set_primitive(&gamewindow.device, gen::primitive::Primitive::Cube)
             .set_size(Vector3::new(1000., 5., 1000.))
-            .set_position(Vector3::new(0., 0., 0.))
+            .set_position(Vector3::new(0., -10., 0.))
             .finalize();
         gamewindow.renderer.render_storage.add_object(Arc::new(obj2));
     }
 
-    let mut last_frame = 0.0;
-    let watch = Stopwatch::start_new();
+    let mut last_update = instant::Instant::now();
 
     let _ = event_loop.run(
         move |event, control_flow| 
@@ -63,7 +63,6 @@ fn main() {
             },
             Event::DeviceEvent {event: DeviceEvent::MouseMotion { delta }, device_id } => {
                 workspace.current_camera.controller.process_mouse_input(delta.0, delta.1);
-                println!("{:?}", workspace.current_camera.look_vector());
             },
             Event::WindowEvent {
                 ref event,
@@ -84,8 +83,11 @@ fn main() {
                         },
                         WindowEvent::RedrawRequested => {
                             if window_id == window.id() {
-                                gamewindow.on_next_frame(&mut workspace, watch.elapsed().as_secs_f32() - last_frame);
-                                last_frame = watch.elapsed().as_secs_f32();
+                                let now = instant::Instant::now();
+                                let dt = now - last_update;
+                                last_update = now;
+                                gamewindow.on_next_frame(&mut workspace, dt.as_secs_f32());
+                                
                             }
                         }
                         _ => {}

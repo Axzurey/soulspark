@@ -1,5 +1,7 @@
 use std::mem;
 
+use cgmath::InnerSpace;
+
 pub trait Vertex {
     fn desc() -> wgpu::VertexBufferLayout<'static>;
 }
@@ -16,10 +18,13 @@ pub struct ModelVertex {
 }
 
 pub fn calculate_tangents_inplace_modelvertex(vertices: &mut Vec<ModelVertex>, indices: &mut Vec<u32>) {
+
+    let mut triangles_incl = vec![0; vertices.len()];
+
     for c in indices.chunks(3) {
         let v0 = vertices.get(c[0] as usize).unwrap();
         let v1 = vertices.get(c[1] as usize).unwrap();
-        let v2 = vertices.get(c[1] as usize).unwrap();
+        let v2 = vertices.get(c[2] as usize).unwrap();
 
         let pos0: cgmath::Vector3<_> = v0.position.into();
         let pos1: cgmath::Vector3<_> = v1.position.into();
@@ -52,6 +57,18 @@ pub fn calculate_tangents_inplace_modelvertex(vertices: &mut Vec<ModelVertex>, i
             (bitangent + cgmath::Vector3::from(vertices[c[1] as usize].bitangent)).into();
         vertices[c[2] as usize].bitangent =
             (bitangent + cgmath::Vector3::from(vertices[c[2] as usize].bitangent)).into();
+
+        triangles_incl[c[0] as usize] += 1;
+        triangles_incl[c[1] as usize] += 1;
+        triangles_incl[c[2] as usize] += 1;
+    }
+
+    for (i, n) in triangles_incl.into_iter().enumerate() {
+        let denom = 1.0 / n as f32;
+        let v = &mut vertices[i];
+        //todo: double check if these are supposed to be normalized
+        v.tangent = (cgmath::Vector3::from(v.tangent) * denom).normalize().into();
+        v.bitangent = (cgmath::Vector3::from(v.bitangent) * denom).normalize().into();
     }
 }
 
@@ -87,7 +104,7 @@ impl Vertex for ModelVertex {
                     format: wgpu::VertexFormat::Float32x3,
                 },
                 wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
+                    offset: mem::size_of::<[f32; 14]>() as wgpu::BufferAddress,
                     shader_location: 5,
                     format: wgpu::VertexFormat::Uint32,
                 },
