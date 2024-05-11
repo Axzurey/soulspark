@@ -12,6 +12,13 @@ pub const OPENGL_TO_WGPU_MATRIX: cgmath::Matrix4<f32> = cgmath::Matrix4::new(
     0.0, 0.0, 0.5, 1.0,
 );
 
+pub const OPENGL_TO_WGPU_MATRIX_GLAM: glam::Mat4 = glam::Mat4::from_cols_array(&[
+    1.0, 0.0, 0.0, 0.0,
+    0.0, 1.0, 0.0, 0.0,
+    0.0, 0.0, 0.5, 0.0,
+    0.0, 0.0, 0.5, 1.0,
+]);
+
 const SAFE_FRAC_PI_2: f32 = FRAC_PI_2 - 0.0001;
 
 pub struct Camera {

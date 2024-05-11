@@ -1,8 +1,9 @@
-use std::sync::RwLock;
+use std::sync::{Arc, RwLock};
 
+use cgmath::Point3;
 use wgpu::{util::DeviceExt, BindGroupLayout, RenderPipeline, TextureFormat};
 
-use crate::{engine::{surfacevertex::SurfaceVertex, texture::Texture, texture_loader::{initialize_load_textures, preload_textures}, vertex::{ModelVertex, Vertex}}, gen::object::RawObject};
+use crate::{engine::{surfacevertex::SurfaceVertex, texture::Texture, texture_loader::{initialize_load_textures, preload_textures}, vertex::{ModelVertex, Vertex}}, gen::{object::RawObject, spotlight::Spotlight}};
 
 use super::{renderpipeline::create_render_pipeline, renderstorage::RenderStorage};
 
@@ -15,7 +16,9 @@ pub struct MainRenderer {
     texture_bindgroup: wgpu::BindGroup,
     texture_bindgroup_layout: wgpu::BindGroupLayout,
     surface_texture_format: wgpu::TextureFormat,
-    pub render_storage: RenderStorage
+    pub render_storage: RenderStorage,
+    shadow_texture: Texture,
+    spotlights: Vec<Arc<RwLock<Spotlight>>>
 }
 
 impl MainRenderer {
@@ -118,6 +121,8 @@ impl MainRenderer {
 
         let depth_texture = Texture::from_empty("depth texture", &device, wgpu::TextureFormat::Depth32Float, screendims.0, screendims.1, wgpu::FilterMode::Linear);
 
+        let shadow_texture = Texture::from_empty_shadows("shadow texture", &device, wgpu::TextureFormat::Depth32Float, 512, 512, wgpu::FilterMode::Linear, 100);
+
         Self {
             material_bind_group_layout,
             surface_pipeline,
@@ -127,8 +132,31 @@ impl MainRenderer {
             depth_texture,
             object_pipeline,
             surface_texture_format,
-            render_storage: RenderStorage::new()
+            render_storage: RenderStorage::new(),
+            shadow_texture,
+            spotlights: Vec::new()
         }
+    }
+
+    pub fn create_spotlight(&mut self, position: Point3<f32>, target: Point3<f32>) -> Arc<RwLock<Spotlight>> {
+        let view = self.shadow_texture.texture.create_view(&wgpu::TextureViewDescriptor {
+            label: Some("shadow"),
+            format: None,
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            aspect: wgpu::TextureAspect::All,
+            base_mip_level: 0,
+            mip_level_count: None,
+            base_array_layer: 0,
+            array_layer_count: Some(1)
+        });
+
+        let spotlight = Spotlight::new(position, target, 70., 1., 200., view);
+
+        let lock = Arc::new(RwLock::new(spotlight));
+
+        self.spotlights.push(lock.clone());
+
+        lock
     }
 
     pub fn render_objects(&mut self, 
@@ -139,6 +167,25 @@ impl MainRenderer {
         camera_bindgroup: &wgpu::BindGroup
     ) {
         let mut buffers: Vec<wgpu::Buffer> = Vec::new();
+
+        let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("shadow render pass"),
+            color_attachments: &[],
+            depth_stencil_attachment: Some(
+                wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.view,
+                    depth_ops: Some(
+                        wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store
+                        }
+                    ),
+                    stencil_ops: None,
+                }
+            ),
+            timestamp_writes: None,
+            occlusion_query_set: None
+        });
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("object render pass"),

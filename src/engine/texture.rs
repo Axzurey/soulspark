@@ -16,6 +16,52 @@ pub struct Texture {
 }
 
 impl Texture {
+    pub fn from_empty_shadows(
+        label: &str,
+        device: &wgpu::Device,
+        format: TextureFormat,
+        width: u32,
+        height: u32,
+        filter: wgpu::FilterMode,
+        max_lights: u32
+    ) -> Self {
+        let size = wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: max_lights,
+        };
+
+        let texture = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some(label),
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            view_formats: &[]
+        });
+
+        let view = texture.create_view(&TextureViewDescriptor::default());
+
+        let sampler = device.create_sampler(
+            &wgpu::SamplerDescriptor {
+                address_mode_u: wgpu::AddressMode::Repeat,
+                address_mode_v: wgpu::AddressMode::Repeat,
+                address_mode_w: wgpu::AddressMode::Repeat,
+                mag_filter: filter,
+                min_filter: filter,
+                mipmap_filter: filter,
+                ..Default::default()
+            }
+        );
+
+        Self {
+            texture,
+            view,
+            sampler
+        }
+    }
     pub fn from_empty(
         label: &str,
         device: &wgpu::Device,

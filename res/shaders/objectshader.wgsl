@@ -36,6 +36,26 @@ struct Camera {
     view_proj: mat4x4<f32>,
 }
 
+struct CurrentLight {
+    position: vec4<f32>,
+    model: mat4x4<f32>
+}
+
+@group(2) @binding(0)
+var<uniform> current_light: CurrentLight;
+
+@vertex
+fn vs_bake(model: VertexInput, instance: InstanceInput) -> @builtin(position) vec4<f32> {
+    let worldmat = mat4x4<f32>(
+        instance.m0,
+        instance.m1,
+        instance.m2,
+        instance.m3
+    );
+
+    return current_light.model * u_entity.world * vec4<f32>(model.position);
+}
+
 @group(0) @binding(0)
 var diffuse_texture_array: binding_array<texture_2d<f32>>;
 
