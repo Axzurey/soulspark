@@ -52,7 +52,7 @@ impl Texture {
                 mag_filter: wgpu::FilterMode::Linear,
                 min_filter: wgpu::FilterMode::Linear,
                 mipmap_filter: wgpu::FilterMode::Nearest,
-                compare: Some(wgpu::CompareFunction::LessEqual),
+                compare: None, //TODO: JUST IN CASE, THIS WAS A CHANGE!
                 ..Default::default()
             }
         );
