@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use cgmath::Vector3;
+use cgmath::{Point3, Vector3};
 use gen::primitive::PrimitiveBuilder;
 use internal::window::GameWindow;
 use pollster::FutureExt;
@@ -31,6 +31,31 @@ fn main() {
     );
 
     {
+        let light = gamewindow.renderer.create_spotlight(
+            Point3::new(15., 25., 15.), 
+            Point3::new(0., 0., 0.)
+        );
+
+        let read = light.read().unwrap();
+        
+        let obj0 = PrimitiveBuilder::new()
+            .set_diffuse_texture_by_name("grass-top")
+            .set_primitive(&gamewindow.device, gen::primitive::Primitive::Cube)
+            .set_size(Vector3::new(5., 5., 5.))
+            .set_position(Vector3::new(0., 25., 15.))
+            .finalize();
+        gamewindow.renderer.render_storage.add_object(Arc::new(obj0));
+
+        let obj1 = PrimitiveBuilder::new()
+            .set_diffuse_texture_by_name("grass-top")
+            .set_primitive(&gamewindow.device, gen::primitive::Primitive::Cube)
+            .set_size(Vector3::new(15., 15., 15.))
+            .set_position(Vector3::new(0., 0., 0.))
+            .finalize();
+        gamewindow.renderer.render_storage.add_object(Arc::new(obj1));
+    }
+
+    {
         let obj1 = PrimitiveBuilder::new()
             .set_diffuse_texture_by_name("dirt")
             .set_primitive(&gamewindow.device, gen::primitive::Primitive::Cube)
@@ -40,12 +65,20 @@ fn main() {
         gamewindow.renderer.render_storage.add_object(Arc::new(obj1));
 
         let obj2 = PrimitiveBuilder::new()
-            .set_diffuse_texture_by_name("grass-top")
+            .set_diffuse_texture_by_name("dirt")
             .set_primitive(&gamewindow.device, gen::primitive::Primitive::Cube)
             .set_size(Vector3::new(1000., 5., 1000.))
             .set_position(Vector3::new(0., -10., 0.))
             .finalize();
         gamewindow.renderer.render_storage.add_object(Arc::new(obj2));
+
+        let obj3 = PrimitiveBuilder::new()
+            .set_diffuse_texture_by_name("dirt")
+            .set_primitive(&gamewindow.device, gen::primitive::Primitive::Cube)
+            .set_size(Vector3::new(15., 15., 15.))
+            .set_position(Vector3::new(0., 0., 15.))
+            .finalize();
+        gamewindow.renderer.render_storage.add_object(Arc::new(obj3));
     }
 
     let mut last_update = instant::Instant::now();

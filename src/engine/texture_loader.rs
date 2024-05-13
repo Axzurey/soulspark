@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::File, io::BufReader, num::NonZeroU32, sync::{Arc, Mutex}};
+use std::{collections::HashMap, env, fs::File, io::BufReader, num::NonZeroU32, path::Path, sync::{Arc, Mutex}};
 use once_cell::sync::Lazy;
 use serde::Deserialize;
 use wgpu::{FilterMode, Sampler, TextureView};
@@ -71,14 +71,19 @@ pub fn preload_textures(
     queue: &wgpu::Queue,
     format: wgpu::TextureFormat
 ) {
-    let file = File::open("res/data/texture_manifest.json").expect("Unable to load model_manifest file");
+    let mut tex = env::current_dir().unwrap();
+    tex.push("res/data/texture_manifest.json");
+
+    let file = File::open(tex).expect("Unable to load model_manifest file");
     let reader = BufReader::new(file);
     let data: Vec<TextureLoadData> = serde_json::from_reader(reader).expect("Invalid model_manifest data");
 
     let mut lock = LOADED_TEXTURES.lock().unwrap();
 
     for definition in data {
-        let texture = Arc::new(Texture::from_bytes(&definition.alias, device, queue, format, &load_binary_sync(&definition.texture_path).unwrap(), definition.filter.into()));
+        let mut path = env::current_dir().unwrap();
+        path.push(Path::new(&format!("res/{}", definition.texture_path)));
+        let texture = Arc::new(Texture::from_bytes(&definition.alias, device, queue, format, &load_binary_sync(path.to_str().unwrap()).unwrap(), definition.filter.into()));
 
         lock.insert(definition.alias.clone(), LoadedTextureData {
             path: definition.texture_path,

@@ -9,7 +9,9 @@ struct VertexOutput {
     @location(6) t0: vec3<f32>,
     @location(7) t1: vec3<f32>,
     @location(8) t2: vec3<f32>,
-    @location(9) diffuse_texture_index: u32
+    @location(9) diffuse_texture_index: u32,
+    @location(10) world_position: vec4<f32>,
+    @location(11) world_normal: vec3<f32>
 };
 
 struct VertexInput {
@@ -36,13 +38,27 @@ struct Camera {
     view_proj: mat4x4<f32>,
 }
 
-struct CurrentLight {
+struct Light {
     position: vec4<f32>,
-    model: mat4x4<f32>
+    model: mat4x4<f32>,
+    color: vec4<f32>
+}
+
+struct Globals {
+    current_light_model: mat4x4<f32>
 }
 
 @group(2) @binding(0)
-var<uniform> current_light: CurrentLight;
+var<uniform> globals: Globals;
+
+@group(3) @binding(0)
+var<storage, read> lights: array<Light>;
+
+@group(3) @binding(1)
+var shadow_texture: texture_depth_2d_array;
+
+@group(3) @binding(2)
+var shadow_sampler: sampler_comparison;
 
 @vertex
 fn vs_bake(model: VertexInput, instance: InstanceInput) -> @builtin(position) vec4<f32> {
@@ -53,7 +69,7 @@ fn vs_bake(model: VertexInput, instance: InstanceInput) -> @builtin(position) ve
         instance.m3
     );
 
-    return current_light.model * u_entity.world * vec4<f32>(model.position);
+    return globals.current_light_model * worldmat * vec4<f32>(model.position, 1.0);
 }
 
 @group(0) @binding(0)
@@ -86,7 +102,7 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput {
 
     let model_matrix = mat4x4<f32>(instance.m0, instance.m1, instance.m2, instance.m3);
 
-    let normal_matrix = mat3x3<f32>(instance.n0, instance.n1, instance.n2);
+    let normal_matrix = mat3x3<f32>(instance.m0.xyz, instance.m1.xyz, instance.m2.xyz); //mat3x3<f32>(instance.n0, instance.n1, instance.n2);
 
     let world_normal = normalize(normal_matrix * model.normal);
 
@@ -120,15 +136,45 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput {
     out.texture_stretch_u = length(texture_stretch_u);
     out.texture_stretch_v = length(texture_stretch_v);
     out.diffuse_texture_index = model.diffuse_texture_index;
+    out.world_position = world_position;
+    out.world_normal = world_normal;
     return out;
+}
+
+fn fetch_shadow(light_index: u32, homogeneous_coords: vec4<f32>) -> f32 {
+    if (homogeneous_coords.w <= 0.0) {
+        return 1.0;
+    }
+    // compensate for the Y-flip difference between the NDC and texture coordinates
+    let flip_correction = vec2<f32>(0.5, -0.5);
+    // compute texture coordinates for shadow lookup
+    let proj_correction = 1.0 / homogeneous_coords.w;
+    let light_local = homogeneous_coords.xy * flip_correction * proj_correction + vec2<f32>(0.5, 0.5);
+
+    return textureSampleCompareLevel(shadow_texture, shadow_sampler, light_local, i32(light_index), homogeneous_coords.z * proj_correction);
 }
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
-    let tex_coords = vec2<f32>(in.tex_coords.x * in.texture_stretch_u, in.tex_coords.y * in.texture_stretch_v);
+    var tex_coords = vec2(0.0, 0.0);
     
-    let object_color: vec4<f32> = textureSample(diffuse_texture_array[in.diffuse_texture_index], diffuse_sampler_array[in.diffuse_texture_index], tex_coords);
+    var object_color: vec4<f32> = textureSample(diffuse_texture_array[in.diffuse_texture_index], diffuse_sampler_array[in.diffuse_texture_index], tex_coords);
 
-    return object_color;
+    var normal = in.world_normal;
+
+    var color: vec3<f32> = vec3<f32>(0.05, 0.05, 0.05);
+    
+    for(var i = 0u; i < arrayLength(&lights); i += 1u) {
+        let light = lights[i];
+        // project to light space
+        let shadow = fetch_shadow(i, light.model * in.world_position);
+        
+        let light_dir = normalize(light.position.xyz - in.world_position.xyz);
+        let diffuse = max(0.0, dot(normal, light_dir));
+        
+        color += shadow * diffuse * light.color.xyz;
+    }
+
+    return vec4<f32>(color, 1.0) * object_color;
 }

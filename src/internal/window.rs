@@ -44,10 +44,11 @@ impl<'a> GameWindow<'a> {
         let (device, queue) = adapter.request_device(&wgpu::DeviceDescriptor {
             required_features: wgpu::Features::TEXTURE_BINDING_ARRAY
              | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING 
-             | wgpu::Features::BGRA8UNORM_STORAGE,
+             | wgpu::Features::BGRA8UNORM_STORAGE | wgpu::Features::DEPTH_CLIP_CONTROL,
             required_limits: wgpu::Limits {
                 max_sampled_textures_per_shader_stage: 121,
                 max_samplers_per_shader_stage: 121,
+                max_bind_groups: 5,
                 ..Default::default()
             },
             label: None,
@@ -120,7 +121,7 @@ impl<'a> GameWindow<'a> {
             label: Some("Primary Encoder")
         });
 
-        self.renderer.render_objects(&self.device, &mut output, &view, &mut encoder, &workspace.current_camera.bindgroup);
+        self.renderer.render_objects(&self.device, &self.queue, &mut output, &view, &mut encoder, &workspace.current_camera.bindgroup);
 
         self.queue.submit(std::iter::once(encoder.finish()));
         

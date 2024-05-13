@@ -9,7 +9,11 @@ pub fn create_render_pipeline(
     vertex_layouts: &[wgpu::VertexBufferLayout],
     shader_path: &str,
     backface_culling: bool,
-    depth_write_enabled: bool
+    depth_write_enabled: bool,
+    bias: Option<wgpu::DepthBiasState>,
+    nocolor: bool,
+    nofrag: bool,
+    bake: bool
 ) -> wgpu::RenderPipeline {
     let shader_descriptor = wgpu::ShaderModuleDescriptor {
         label: Some(shader_path),
@@ -36,35 +40,31 @@ pub fn create_render_pipeline(
         layout: Some(pipeline_layout),
         vertex: wgpu::VertexState {
             module: &shader,
-            entry_point: "vs_main",
+            entry_point: if bake {"vs_bake"} else {"vs_main"},
             buffers: vertex_layouts,
         },
-        fragment: Some(wgpu::FragmentState {
+        fragment: if nofrag {None} else {Some(wgpu::FragmentState {
             module: &shader,
             entry_point: "fs_main",
-            targets: &color_targetstate,
-        }),
+            targets: if nocolor {&[]} else {&color_targetstate},
+        })},
         primitive: wgpu::PrimitiveState {
             topology: wgpu::PrimitiveTopology::TriangleList,
             strip_index_format: None,
             front_face: wgpu::FrontFace::Ccw,
             cull_mode: if backface_culling {Some(wgpu::Face::Back)} else {None},
             polygon_mode: wgpu::PolygonMode::Fill,
-            unclipped_depth: false,
+            unclipped_depth: true,
             conservative: false,
         },
         depth_stencil: depth_format.map(|format| wgpu::DepthStencilState {
             format,
             depth_write_enabled,
-            depth_compare: wgpu::CompareFunction::Less,
+            depth_compare: wgpu::CompareFunction::LessEqual,
             stencil: wgpu::StencilState::default(),
-            bias: wgpu::DepthBiasState::default(),
+            bias: if bias.is_some() {bias.unwrap()} else {wgpu::DepthBiasState::default()},
         }),
-        multisample: wgpu::MultisampleState {
-            count: 1,
-            mask: !0,
-            alpha_to_coverage_enabled: false,
-        },
+        multisample: wgpu::MultisampleState::default(),
         multiview: None,
     };
 

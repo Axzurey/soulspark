@@ -38,7 +38,7 @@ impl Texture {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::RENDER_ATTACHMENT,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::RENDER_ATTACHMENT,
             view_formats: &[]
         });
 
@@ -46,12 +46,13 @@ impl Texture {
 
         let sampler = device.create_sampler(
             &wgpu::SamplerDescriptor {
-                address_mode_u: wgpu::AddressMode::Repeat,
-                address_mode_v: wgpu::AddressMode::Repeat,
-                address_mode_w: wgpu::AddressMode::Repeat,
-                mag_filter: filter,
-                min_filter: filter,
-                mipmap_filter: filter,
+                address_mode_u: wgpu::AddressMode::ClampToEdge,
+                address_mode_v: wgpu::AddressMode::ClampToEdge,
+                address_mode_w: wgpu::AddressMode::ClampToEdge,
+                mag_filter: wgpu::FilterMode::Linear,
+                min_filter: wgpu::FilterMode::Linear,
+                mipmap_filter: wgpu::FilterMode::Nearest,
+                compare: Some(wgpu::CompareFunction::LessEqual),
                 ..Default::default()
             }
         );
@@ -89,17 +90,7 @@ impl Texture {
 
         let view = texture.create_view(&TextureViewDescriptor::default());
 
-        let sampler = device.create_sampler(
-            &wgpu::SamplerDescriptor {
-                address_mode_u: wgpu::AddressMode::Repeat,
-                address_mode_v: wgpu::AddressMode::Repeat,
-                address_mode_w: wgpu::AddressMode::Repeat,
-                mag_filter: filter,
-                min_filter: filter,
-                mipmap_filter: filter,
-                ..Default::default()
-            }
-        );
+        let sampler = device.create_sampler(&wgpu::SamplerDescriptor::default());
 
         Self {
             texture,

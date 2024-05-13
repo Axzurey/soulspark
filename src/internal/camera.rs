@@ -130,7 +130,7 @@ impl Camera {
             Vector3::unit_y()
         );
 
-        self.projection_matrix = OPENGL_TO_WGPU_MATRIX * perspective(self.fov, self.aspect_ratio, self.znear, self.zfar);
+        self.projection_matrix = perspective(self.fov, self.aspect_ratio, self.znear, self.zfar);
     
         self.view_proj_matrix = self.projection_matrix * self.view_matrix;
 
