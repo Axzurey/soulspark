@@ -139,7 +139,7 @@ fn vs_main(model: VertexInput, instance: InstanceInput) -> VertexOutput {
     out.diffuse_texture_index = model.diffuse_texture_index;
     out.world_position = world_position;
     out.world_normal = world_normal;
-    out.normal = normal_matrix * model.normal;
+    out.normal = model.normal;
     return out;
 }
 
@@ -191,8 +191,6 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     
     var object_color: vec4<f32> = textureSample(diffuse_texture_array[in.diffuse_texture_index], diffuse_sampler_array[in.diffuse_texture_index], tex_coords);
 
-    var world_normal = in.world_normal;
-
     var color: vec3<f32> = vec3<f32>(0.05, 0.05, 0.05);
     
     for(var i = 0u; i < arrayLength(&lights); i += 1u) {
@@ -210,7 +208,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
         var halfdir = normalize(light_dir + viewdir);
         var spec = pow(max(dot(in.normal, halfdir), 0.0), 64.0);
         
-        color += (1 - shadow) * (diffuse + spec) * light.color.xyz;
+        color += (1 - shadow) * (diffuse * light.color.xyz + spec * light.color.xyz) * light.color.xyz;
     }
 
     return vec4<f32>(color, 1.0) * object_color;
