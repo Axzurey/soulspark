@@ -1,8 +1,8 @@
 use std::{collections::HashMap, sync::{Arc, RwLock}};
 
-use cgmath::Vector2;
+use cgmath::{Vector2, Vector3};
 
-use crate::blocks::block::Block;
+use crate::{blocks::block::Block, engine::surfacevertex::SurfaceVertex};
 
 use super::chunk::{xz_to_index, Chunk};
 
@@ -47,7 +47,7 @@ impl ChunkManager {
         }
     }
 
-    pub fn mesh_slice(&mut self, chunk: &mut Chunk) {
+    pub fn mesh_slice(&mut self, chunk: &mut Chunk, y_slice: u32) {
         let mut vertices: Vec<SurfaceVertex> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
         let pos = Vector3::new(chunk.position.x * 16, 0, chunk.position.y * 16);
@@ -70,7 +70,7 @@ impl ChunkManager {
                     let right = get_block_at_absolute((x as i32) + rel_abs_x + 1, y as i32, (z as i32) + rel_abs_z, &self.chunks);
                     let left = get_block_at_absolute((x as i32) + rel_abs_x - 1, y as i32, (z as i32) + rel_abs_z, &self.chunks);
                     
-                    if front.is_none() || (front.is_some() && front.clone().unwrap().read().unwrap().is_transparent()) {
+                    if front.is_none() || (front.is_some() && front.clone().unwrap().read().unwrap().has_partial_transparency( )) {
                         let current_l = vertices.len();
                         indices.push((current_l + 0) as u32);
                         indices.push((current_l + 1) as u32);
