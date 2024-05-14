@@ -21,8 +21,8 @@ pub struct Spotlight {
 }
 
 impl Spotlight {
-    pub fn new(position: Point3<f32>, target_position: Point3<f32>, fov: f32, near: f32, far: f32, texture_view: wgpu::TextureView) -> Self {
-        let proj = perspective(Rad(fov.to_radians()), 1., near, far);
+    pub fn new(position: Point3<f32>, target_position: Point3<f32>, fov: f32, near: f32, far: f32, aspect: f32, texture_view: wgpu::TextureView) -> Self {
+        let proj = perspective(Rad(fov.to_radians()), aspect, near, far);
 
         let view = Matrix4::look_to_rh(
             position,
@@ -41,7 +41,7 @@ impl Spotlight {
             raw_spotlight: RawSpotLight {
                 position: [position.x, position.y, position.z, 1.],
                 model: view_proj.into(),
-                color: [1., 0., 0., 1.]
+                color: [0., 1., 1., 1.]
             },
             texture_view,
             color: Color4::new(1., 0., 0., 1.)

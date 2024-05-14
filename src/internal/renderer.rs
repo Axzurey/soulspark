@@ -30,7 +30,9 @@ pub struct MainRenderer {
     shadow_bindgroup_layout: wgpu::BindGroupLayout,
     globals: RendererGlobals,
     global_bindgroup_layout: wgpu::BindGroupLayout,
-    shadow_prebindgroup_layout: wgpu::BindGroupLayout
+    shadow_prebindgroup_layout: wgpu::BindGroupLayout,
+    width: u32,
+    height: u32
 }
 
 impl MainRenderer {
@@ -242,7 +244,9 @@ impl MainRenderer {
             shadow_bindgroup_layout,
             globals,
             global_bindgroup_layout,
-            shadow_prebindgroup_layout
+            shadow_prebindgroup_layout,
+            width: screendims.0,
+            height: screendims.1
         }
     }
 
@@ -258,7 +262,7 @@ impl MainRenderer {
             array_layer_count: Some(1)
         });
 
-        let spotlight = Spotlight::new(position, target, 45., 1., 20., view);
+        let spotlight = Spotlight::new(position, target, 70., 0.1, 400., self.width as f32 / self.height as f32, view);
 
         let lock = Arc::new(RwLock::new(spotlight));
 

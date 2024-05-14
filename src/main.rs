@@ -38,13 +38,13 @@ fn main() {
 
         let read = light.read().unwrap();
         
-        // let obj0 = PrimitiveBuilder::new()
-        //     .set_diffuse_texture_by_name("grass-top")
-        //     .set_primitive(&gamewindow.device, gen::primitive::Primitive::Cube)
-        //     .set_size(Vector3::new(5., 5., 5.))
-        //     .set_position(Vector3::new(0., 25., 15.))
-        //     .finalize();
-        // gamewindow.renderer.render_storage.add_object(Arc::new(obj0));
+        let obj0 = PrimitiveBuilder::new()
+            .set_diffuse_texture_by_name("grass-top")
+            .set_primitive(&gamewindow.device, gen::primitive::Primitive::Cube)
+            .set_size(Vector3::new(5., 5., 5.))
+            .set_position(Vector3::new(15., 25., 15.))
+            .finalize();
+        gamewindow.renderer.render_storage.add_object(Arc::new(obj0));
 
         // let obj1 = PrimitiveBuilder::new()
         //     .set_diffuse_texture_by_name("grass-top")
