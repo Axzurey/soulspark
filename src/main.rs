@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use cgmath::{Point3, Vector3};
 use gen::primitive::PrimitiveBuilder;
+use gui::elements::slider::Slider;
+use gui::elements::textbutton::TextButton;
 use internal::window::GameWindow;
 use pollster::FutureExt;
 use state::workspace::Workspace;
@@ -16,9 +18,12 @@ mod state;
 mod engine;
 mod vox;
 mod gen;
+mod gui;
 mod blocks;
+mod util;
 
-fn main() {
+#[tokio::main()]
+async fn main() {
     let event_loop = EventLoop::new().unwrap();
 
     let window = Arc::new(WindowBuilder::new().build(&event_loop).unwrap());
@@ -30,56 +35,26 @@ fn main() {
         gamewindow.window_size.width, gamewindow.window_size.height
     );
 
+    workspace.chunk_manager.generate_chunks();
+    workspace.chunk_manager.mesh_chunks(&gamewindow.device);
+
     {
         let light = gamewindow.renderer.create_spotlight(
             Point3::new(15., 25., 15.), 
             Point3::new(0., 0., 0.)
         );
-
-        let read = light.read().unwrap();
-        
-        let obj0 = PrimitiveBuilder::new()
-            .set_diffuse_texture_by_name("grass-top")
-            .set_primitive(&gamewindow.device, gen::primitive::Primitive::Cube)
-            .set_size(Vector3::new(5., 5., 5.))
-            .set_position(Vector3::new(15., 25., 15.))
-            .finalize();
-        gamewindow.renderer.render_storage.add_object(Arc::new(obj0));
-
-        // let obj1 = PrimitiveBuilder::new()
-        //     .set_diffuse_texture_by_name("grass-top")
-        //     .set_primitive(&gamewindow.device, gen::primitive::Primitive::Cube)
-        //     .set_size(Vector3::new(15., 15., 15.))
-        //     .set_position(Vector3::new(0., 0., 0.))
-        //     .finalize();
-        // gamewindow.renderer.render_storage.add_object(Arc::new(obj1));
     }
 
-    {
-        let obj1 = PrimitiveBuilder::new()
-            .set_diffuse_texture_by_name("dirt")
-            .set_primitive(&gamewindow.device, gen::primitive::Primitive::Cube)
-            .set_size(Vector3::new(5., 15., 55.))
-            .set_position(Vector3::new(10., 10., 10.))
-            .finalize();
-        gamewindow.renderer.render_storage.add_object(Arc::new(obj1));
+    let textbutton = TextButton::new("button!".to_owned(), "Hello Me!".to_owned());
 
-        let obj2 = PrimitiveBuilder::new()
-            .set_diffuse_texture_by_name("dirt")
-            .set_primitive(&gamewindow.device, gen::primitive::Primitive::Cube)
-            .set_size(Vector3::new(1000., 5., 1000.))
-            .set_position(Vector3::new(0., -10., 0.))
-            .finalize();
-        gamewindow.renderer.render_storage.add_object(Arc::new(obj2));
+    textbutton.write().unwrap().on_click.connect(|v| Box::pin(async {
+        println!("HELLO");
+    }));
 
-        let obj3 = PrimitiveBuilder::new()
-            .set_diffuse_texture_by_name("dirt")
-            .set_primitive(&gamewindow.device, gen::primitive::Primitive::Cube)
-            .set_size(Vector3::new(15., 15., 15.))
-            .set_position(Vector3::new(0., 0., 15.))
-            .finalize();
-        gamewindow.renderer.render_storage.add_object(Arc::new(obj3));
-    }
+    let slider = Slider::new("SLIDERRR".to_owned());
+
+    {gamewindow.screenui.write().unwrap().add_child(textbutton);}
+    {gamewindow.screenui.write().unwrap().add_child(slider);}
 
     let mut last_update = instant::Instant::now();
 
@@ -104,6 +79,7 @@ fn main() {
                 
                 
                 if window_id == window.id() {
+                    gamewindow.gui_renderer.handle_input(gamewindow.window.clone(), event);
                     match event {
                         WindowEvent::CloseRequested | WindowEvent::KeyboardInput {event: KeyEvent {
                             physical_key: PhysicalKey::Code(KeyCode::Escape), ..

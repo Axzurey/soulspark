@@ -5,7 +5,7 @@ use cgmath::{Vector2, Vector3};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use stopwatch::Stopwatch;
 
-use crate::blocks::{airblock::AirBlock, block::Block, dirtblock::DirtBlock};
+use crate::blocks::{airblock::AirBlock, block::Block, dirtblock::DirtBlock, grassblock::GrassBlock};
 
 use super::worldgen::generate_surface_height;
 
@@ -29,7 +29,6 @@ pub struct Chunk {
     
     //(vertex, index, len_indices)
     solid_buffers: Vec<(wgpu::Buffer, wgpu::Buffer, u32)>,
-
 }
 
 impl Chunk {
@@ -54,7 +53,13 @@ impl Chunk {
                         let abs_y = (y + y_slice as u32 * 16) as i32;
 
                         let block: Arc<RwLock<dyn Block + Send + Sync>> =
-                        if abs_y <= floor_level {
+                        if abs_y == floor_level {
+                            Arc::new(RwLock::new(GrassBlock::new(
+                                Vector3::new(x, y as u32, z), 
+                                Vector3::new(abs_x, abs_y, abs_z)))
+                            )
+                        }
+                        else if abs_y < floor_level {
                             Arc::new(RwLock::new(DirtBlock::new(
                                 Vector3::new(x, y as u32, z), 
                                 Vector3::new(abs_x, abs_y, abs_z)))
@@ -90,5 +95,18 @@ impl Chunk {
 
     pub fn get_block_at(&self, x: u32, y: u32, z: u32) -> Arc<RwLock<dyn Block + Send + Sync>> {
         self.grid[(y / 16) as usize][local_xyz_to_index(x % 16, y % 16, z % 16) as usize].clone()
+    }
+
+    pub fn set_solid_buffer(&mut self, slice: u32, buffers: (wgpu::Buffer, wgpu::Buffer, u32)) {
+        self.solid_buffers[slice as usize] = buffers;
+    }
+    pub fn set_solid_buffers(&mut self, buffers: Vec<(wgpu::Buffer, wgpu::Buffer, u32)>) {
+        self.solid_buffers = buffers;
+    }
+    pub fn get_solid_buffer(&self, slice: u32) -> &(wgpu::Buffer, wgpu::Buffer, u32) {
+        &self.solid_buffers[slice as usize]
+    }
+    pub fn get_solid_buffers(&self) -> &Vec<(wgpu::Buffer, wgpu::Buffer, u32)> {
+        &self.solid_buffers
     }
 }

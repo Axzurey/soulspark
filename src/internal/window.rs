@@ -1,8 +1,9 @@
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
+use egui_wgpu::ScreenDescriptor;
 use instant::Duration;
 use winit::{event_loop::EventLoop, window::Window, window::WindowBuilder};
 
-use crate::{internal::renderer::MainRenderer, state::workspace::Workspace};
+use crate::{gui::{elements::screenui::ScreenUi, guirenderer::GuiRenderer}, internal::renderer::MainRenderer, state::workspace::Workspace};
 
 pub struct GameWindow<'a> {
     surface: wgpu::Surface<'a>,
@@ -13,7 +14,9 @@ pub struct GameWindow<'a> {
     pub window: Arc<Window>,
     surface_format: wgpu::TextureFormat,
     pub renderer: MainRenderer,
-    pub camera_bindgroup_layout: wgpu::BindGroupLayout
+    pub gui_renderer: GuiRenderer,
+    pub camera_bindgroup_layout: wgpu::BindGroupLayout,
+    pub screenui: Arc<RwLock<ScreenUi>>
 }
 
 impl<'a> GameWindow<'a> {
@@ -96,6 +99,10 @@ impl<'a> GameWindow<'a> {
 
         surface.configure(&device, &surface_config);
 
+        let gui_renderer = GuiRenderer::new(&device, surface_format, None, 1, &window);
+
+        let screenui = ScreenUi::new("screen-root".to_string());
+
         Self {
             surface,
             queue,
@@ -105,7 +112,9 @@ impl<'a> GameWindow<'a> {
             surface_config,
             surface_format,
             renderer,
-            camera_bindgroup_layout
+            camera_bindgroup_layout,
+            gui_renderer,
+            screenui
         }
     }
 
@@ -121,7 +130,16 @@ impl<'a> GameWindow<'a> {
             label: Some("Primary Encoder")
         });
 
-        self.renderer.render_objects(&self.device, &self.queue, &mut output, &view, &mut encoder, &workspace.current_camera.bindgroup);
+        self.renderer.render_objects(&self.device, &self.queue, &mut output, &view, &mut encoder, &workspace.current_camera.bindgroup, &workspace);
+
+        let screen_descriptor = ScreenDescriptor {
+            size_in_pixels: [self.window_size.width, self.window_size.height],
+            pixels_per_point: self.window.scale_factor() as f32
+        };
+
+        self.gui_renderer.draw(&self.device, &self.queue, &mut encoder, &self.window, &view, screen_descriptor, |ctx| {
+            self.screenui.write().unwrap().render(ctx)
+        });
 
         self.queue.submit(std::iter::once(encoder.finish()));
         

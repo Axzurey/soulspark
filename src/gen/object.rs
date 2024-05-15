@@ -76,8 +76,8 @@ impl Object {
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct RawObject {
-    model: [[f32; 4]; 4],
-    normal: [[f32; 3]; 3]
+    pub model: [[f32; 4]; 4],
+    pub normal: [[f32; 3]; 3]
 }
 
 impl RawObject {

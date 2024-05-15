@@ -35,7 +35,7 @@ impl Display for Primitive {
 
 
 #[cached]
-fn create_cube(diffuse_texture_index: u32) -> (Vec<ModelVertex>, Vec<u32>) {
+fn create_cube(diffuse_texture_index: u32, normal_texture_index: u32, emissive_texture_index: u32) -> (Vec<ModelVertex>, Vec<u32>) {
     let mut vertices: Vec<ModelVertex> = Vec::new();
     let mut indices: Vec<u32> = Vec::from([
         2, 1, 0, 3, 2, 0,
@@ -50,58 +50,58 @@ fn create_cube(diffuse_texture_index: u32) -> (Vec<ModelVertex>, Vec<u32>) {
     
     //back
     vertices.push(ModelVertex {position: [-half_side_length, -half_side_length, -half_side_length], tex_coords: [0., 0.],
-        normal: [0., 0., -1.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [0., 0., -1.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [half_side_length, -half_side_length, -half_side_length], tex_coords: [1., 0.],
-        normal: [0., 0., -1.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [0., 0., -1.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [half_side_length, half_side_length, -half_side_length], tex_coords: [1., 1.],
-        normal: [0., 0., -1.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [0., 0., -1.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [-half_side_length, half_side_length, -half_side_length], tex_coords: [0., 1.],
-        normal: [0., 0., -1.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [0., 0., -1.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     //front
     vertices.push(ModelVertex {position: [-half_side_length, -half_side_length, half_side_length], tex_coords: [0., 0.],
-        normal: [0., 0., 1.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [0., 0., 1.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [half_side_length, -half_side_length, half_side_length], tex_coords: [1., 0.],
-        normal: [0., 0., 1.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [0., 0., 1.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [half_side_length, half_side_length, half_side_length], tex_coords: [1., 1.],
-        normal: [0., 0., 1.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [0., 0., 1.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [-half_side_length, half_side_length, half_side_length], tex_coords: [0., 1.],
-        normal: [0., 0., 1.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [0., 0., 1.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     //left
     vertices.push(ModelVertex {position: [-half_side_length, -half_side_length, -half_side_length], tex_coords: [0., 0.],
-        normal: [-1., 0., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [-1., 0., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [-half_side_length, -half_side_length, half_side_length], tex_coords: [1., 0.],
-        normal: [-1., 0., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [-1., 0., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [-half_side_length, half_side_length, half_side_length], tex_coords: [1., 1.],
-        normal: [-1., 0., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [-1., 0., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [-half_side_length, half_side_length, -half_side_length], tex_coords: [0., 1.],
-        normal: [-1., 0., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [-1., 0., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     //right
     vertices.push(ModelVertex {position: [half_side_length, -half_side_length, -half_side_length], tex_coords: [0., 0.],
-        normal: [1., 0., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [1., 0., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [half_side_length, -half_side_length, half_side_length], tex_coords: [1., 0.],
-        normal: [1., 0., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [1., 0., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [half_side_length, half_side_length, half_side_length], tex_coords: [1., 1.],
-        normal: [1., 0., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [1., 0., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [half_side_length, half_side_length, -half_side_length], tex_coords: [0., 1.],
-        normal: [1., 0., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [1., 0., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     //bottom
     vertices.push(ModelVertex {position: [-half_side_length, -half_side_length, -half_side_length], tex_coords: [0., 0.],
-        normal: [0., -1., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [0., -1., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [half_side_length, -half_side_length, -half_side_length], tex_coords: [1., 0.],
-        normal: [0., -1., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [0., -1., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [half_side_length, -half_side_length, half_side_length], tex_coords: [1., 1.],
-        normal: [0., -1., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [0., -1., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [-half_side_length, -half_side_length, half_side_length], tex_coords: [0., 1.],
-        normal: [0., -1., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [0., -1., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     //top
     vertices.push(ModelVertex {position: [-half_side_length, half_side_length, -half_side_length], tex_coords: [0., 0.],
-        normal: [0., 1., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [0., 1., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [half_side_length, half_side_length, -half_side_length], tex_coords: [1., 0.],
-        normal: [0., 1., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [0., 1., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [half_side_length, half_side_length, half_side_length], tex_coords: [0., 1.],
-        normal: [0., 1., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [0., 1., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
     vertices.push(ModelVertex {position: [-half_side_length, half_side_length, half_side_length], tex_coords: [0., 0.],
-        normal: [0., 1., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index});
+        normal: [0., 1., 0.], bitangent: [0., 0., 0.], tangent: [0., 0., 0.], diffuse_texture_index, normal_texture_index, emissive_texture_index});
 
     calculate_tangents_inplace_modelvertex(&mut vertices, &mut indices);
 
@@ -111,12 +111,12 @@ fn create_cube(diffuse_texture_index: u32) -> (Vec<ModelVertex>, Vec<u32>) {
 
 cached_key! {
     LENGTH: SizedCache<String, Arc<Mesh>> = SizedCache::with_size(100);
-    Key = { format!("{}:{}", p, diffuse_texture_index) };
-    fn create_primitive(p: Primitive, device: &wgpu::Device, diffuse_texture_index: u32) -> Arc<Mesh> = {
+    Key = { format!("{}:{}:{}:{}", p, diffuse_texture_index, normal_texture_index, emissive_texture_index) };
+    fn create_primitive(p: Primitive, device: &wgpu::Device, diffuse_texture_index: u32, normal_texture_index: u32, emissive_texture_index: u32) -> Arc<Mesh> = {
         println!("{}", diffuse_texture_index);
         match p {
             Primitive::Cube => {
-                let (mut vertices, mut indices) = create_cube(diffuse_texture_index);
+                let (mut vertices, mut indices) = create_cube(diffuse_texture_index, normal_texture_index, emissive_texture_index);
                 calculate_tangents_inplace_modelvertex(&mut vertices, &mut indices);
 
                 for i in 0..3 {
@@ -205,7 +205,7 @@ impl PrimitiveBuilder {
 
     pub fn set_primitive(mut self, device: &wgpu::Device, p: Primitive) -> Self {
         
-        let mesh = create_primitive(p, device, self.diffuse_texture_index.expect("all textures must be set before set_primitive is called"));
+        let mesh = create_primitive(p, device, self.diffuse_texture_index.expect("all textures must be set before set_primitive is called"), 0, 0);
 
         self.mesh = Some(mesh);
 

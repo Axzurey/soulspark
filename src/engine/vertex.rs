@@ -14,7 +14,9 @@ pub struct ModelVertex {
     pub normal: [f32; 3],
     pub tangent: [f32; 3],
     pub bitangent: [f32; 3],
-    pub diffuse_texture_index: u32
+    pub diffuse_texture_index: u32,
+    pub normal_texture_index: u32,
+    pub emissive_texture_index: u32
 }
 
 pub fn calculate_tangents_inplace_modelvertex(vertices: &mut Vec<ModelVertex>, indices: &mut Vec<u32>) {

@@ -1,10 +1,11 @@
 use std::{mem, sync::{Arc, RwLock}};
 
-use cgmath::{Matrix4, Point3, SquareMatrix};
+use cgmath::{Matrix3, Matrix4, Point3, SquareMatrix};
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use stopwatch::Stopwatch;
 use wgpu::{util::DeviceExt, BindGroupLayout, RenderPipeline, TextureFormat};
 
-use crate::{engine::{surfacevertex::SurfaceVertex, texture::Texture, texture_loader::{initialize_load_textures, preload_textures}, vertex::{ModelVertex, Vertex}}, gen::{object::RawObject, spotlight::{RawSpotLight, Spotlight}}};
+use crate::{engine::{surfacevertex::SurfaceVertex, texture::Texture, texture_loader::{initialize_load_textures, preload_textures}, vertex::{ModelVertex, Vertex}}, gen::{object::RawObject, spotlight::{RawSpotLight, Spotlight}}, state::workspace::Workspace};
 
 use super::{renderpipeline::create_render_pipeline, renderstorage::RenderStorage};
 
@@ -277,8 +278,10 @@ impl MainRenderer {
         output_texture: &mut wgpu::SurfaceTexture, 
         output_view: &wgpu::TextureView, 
         encoder: &mut wgpu::CommandEncoder,
-        camera_bindgroup: &wgpu::BindGroup
+        camera_bindgroup: &wgpu::BindGroup,
+        workspace: &Workspace
     ) {
+        let frame_start = Stopwatch::start_new();
         let spotlight_raws: Vec<RawSpotLight> = self.spotlights.par_iter().map(|v| v.read().unwrap().get_raw().clone()).collect();
 
         let spotlight_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -318,7 +321,7 @@ impl MainRenderer {
             let raw = vec![obj.get_raw().clone()];
             
             let obj_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("object buffer"),
+                label: Some("some object buffer"),
                 contents: bytemuck::cast_slice(&raw),
                 usage: wgpu::BufferUsages::VERTEX
             });
@@ -326,6 +329,20 @@ impl MainRenderer {
             buffers.push(obj_buffer); //can't have both a mutable and immutable reference at the same time :(
         }
         let mut index = 0;
+
+        let default_object_buffer = {
+            let raw = vec![RawObject {
+                model: Matrix4::identity().into(),
+                normal: Matrix3::identity().into()
+            }];
+
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("default object buffer"),
+                contents: bytemuck::cast_slice(&raw),
+                usage: wgpu::BufferUsages::VERTEX
+            })
+        };
+
         for light in &self.spotlights {
 
             let read = light.read().unwrap();
@@ -386,6 +403,18 @@ impl MainRenderer {
                     shadow_pass.draw_indexed(0..mesh.num_elements, 0, 0..1);
                 }
                 i += 1;
+            }
+
+            for (index, chunk) in workspace.chunk_manager.chunks.iter() {
+                let out = chunk.get_solid_buffers();
+
+                for (vertex_buffer, index_buffer, ilen) in out {
+                    if *ilen == 0 {continue};
+                    shadow_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    shadow_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                    shadow_pass.set_vertex_buffer(1, default_object_buffer.slice(..));
+                    shadow_pass.draw_indexed(0..*ilen, 0, 0..1);
+                }
             }
     
             drop(shadow_pass);
@@ -458,45 +487,18 @@ impl MainRenderer {
             }
             i += 1;
         }
-    }
 
-    pub fn render_surface(&mut self, 
-        device: &wgpu::Device, 
-        output_texture: &mut wgpu::Texture, 
-        output_view: &wgpu::TextureView, 
-        encoder: &mut wgpu::CommandEncoder,
-        camera_bindgroup: &wgpu::BindGroup
-    ) {
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("surface render pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment { 
-                view: &output_view, 
-                resolve_target: None, 
-                ops: wgpu::Operations { 
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.1,
-                        g: 0.2,
-                        b: 0.3,
-                        a: 1.0
-                    }),
-                    store: wgpu::StoreOp::Store
-                }
-            })],
-            depth_stencil_attachment: Some(
-                wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture.view,
-                    depth_ops: Some(
-                        wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(1.0),
-                            store: wgpu::StoreOp::Store
-                        }
-                    ),
-                    stencil_ops: None,
-                }
-            ),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-        render_pass.set_pipeline(&self.surface_pipeline);
+        for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
+            let out = chunk.get_solid_buffers();
+
+            for (vertex_buffer, index_buffer, ilen) in out {
+                if *ilen == 0 {continue};
+                render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(1, default_object_buffer.slice(..));
+                render_pass.draw_indexed(0..*ilen, 0, 0..1);
+            }
+        }
+        println!("Frame took {}ms", frame_start.elapsed_ms());
     }
 }

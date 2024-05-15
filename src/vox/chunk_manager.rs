@@ -1,6 +1,7 @@
 use std::{collections::HashMap, sync::{Arc, RwLock}};
 
 use cgmath::{Vector2, Vector3};
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use wgpu::util::DeviceExt;
 
 use crate::{blocks::block::{Block, BlockFace}, engine::surfacevertex::{calculate_tangents_inplace_surfacevertex, SurfaceVertex}};
@@ -8,7 +9,7 @@ use crate::{blocks::block::{Block, BlockFace}, engine::surfacevertex::{calculate
 use super::chunk::{xz_to_index, Chunk};
 
 pub struct ChunkManager {
-    chunks: HashMap<u32, Chunk>,
+    pub chunks: HashMap<u32, Chunk>,
     render_distance: u32,
     seed: u32
 }
@@ -38,15 +39,26 @@ impl ChunkManager {
         }
     }
 
-    pub fn generate_chunks(&mut self, device: &wgpu::Device) {
+    pub fn generate_chunks(&mut self) {
         for x in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
             for z in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
                 let chunk = Chunk::new(Vector2::new(x, z), self.seed);
+                self.chunks.insert(xz_to_index(x, z), chunk);
             }
         }
     }
 
-    pub fn mesh_slice(&mut self, device: &wgpu::Device, chunk: &mut Chunk, y_slice: u32) -> (wgpu::Buffer, wgpu::Buffer, u32) {
+    pub fn mesh_chunks(&mut self, device: &wgpu::Device) {
+        for x in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
+            for z in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
+                let index = xz_to_index(x, z);
+
+                self.mesh_chunk(device, index);
+            }
+        }
+    }
+
+    pub fn mesh_slice(&self, device: &wgpu::Device, chunk: &Chunk, y_slice: u32) -> (wgpu::Buffer, wgpu::Buffer, u32) {
         let mut vertices: Vec<SurfaceVertex> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
         let pos = Vector3::new(chunk.position.x * 16, 0, chunk.position.y * 16);
@@ -153,8 +165,16 @@ impl ChunkManager {
     }
 
     pub fn mesh_chunk(&mut self, device: &wgpu::Device, index: u32) {
-        let chunk = self.chunks.get_mut(&index).unwrap();
+        let chunk = self.chunks.get(&index).unwrap();
 
+        let slices = (0..16).into_par_iter();
+
+        let buffers = slices.map(|s| {
+            self.mesh_slice(device, chunk, s)
+        }).collect::<Vec<(wgpu::Buffer, wgpu::Buffer, u32)>>();
+
+        let rechunk = self.chunks.get_mut(&index).unwrap();
         
+        rechunk.set_solid_buffers(buffers);
     }
 }
