@@ -41,11 +41,19 @@ impl GuiObject for RwLockWriteGuard<'_, UiAlign> {
         self.name = name;
     }
     fn render(&mut self, ctx: &eframe::egui::Context, ui: &mut eframe::egui::Ui) {
-        let buttonraw = Button::new(&self.text);
-        
-        let button = ui.add_sized([200., 50.], buttonraw);
-        
-        ui.horizontal(add_contents)
+
+        let layout = match self.alignmode {
+            UiAlignMode::Horizontal => ui.horizontal(|ui| {
+                for i in 0..self.children.len() {
+                    self.children[i].write().unwrap().render(ctx, ui);
+                }
+            }),
+            UiAlignMode::Vertical => ui.vertical(|ui| {
+                for i in 0..self.children.len() {
+                    self.children[i].write().unwrap().render(ctx, ui);
+                }
+            })
+        };
     }
 }
 
@@ -60,29 +68,17 @@ impl GuiObject for UiAlign {
         self.name = name;
     }
     fn render(&mut self, ctx: &eframe::egui::Context, ui: &mut eframe::egui::Ui) {
-        let buttonraw = Button::new(&self.text);
-        
-        let button = ui.add_sized([200., 50.], buttonraw);
-        if button.clicked() && !self.left_mouse_down {
-            self.left_mouse_down = true;
-            self.on_click.dispatch(MouseButton::Left).block_on();
-        }
-        else {
-            self.left_mouse_down = false;
-        }
-        if button.secondary_clicked() && !self.right_mouse_down {
-            self.right_mouse_down = true;
-            self.on_click.dispatch(MouseButton::Right).block_on();
-        }
-        else {
-            self.right_mouse_down = false;
-        }
-        if button.hovered() && !self.hovered {
-            self.hovered = true;
-            self.on_hover_enter.dispatch(()).block_on();
-        }
-        else {
-            self.hovered = false;
-        }
+        let layout = match self.alignmode {
+            UiAlignMode::Horizontal => ui.horizontal(|ui| {
+                for i in 0..self.children.len() {
+                    self.children[i].write().unwrap().render(ctx, ui);
+                }
+            }),
+            UiAlignMode::Vertical => ui.vertical(|ui| {
+                for i in 0..self.children.len() {
+                    self.children[i].write().unwrap().render(ctx, ui);
+                }
+            })
+        };
     }
 }

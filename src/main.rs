@@ -32,7 +32,8 @@ async fn main() {
 
     let mut workspace = Workspace::new(
         &gamewindow.device, &gamewindow.camera_bindgroup_layout, 
-        gamewindow.window_size.width, gamewindow.window_size.height
+        gamewindow.window_size.width, gamewindow.window_size.height,
+        window.clone()
     );
 
     workspace.chunk_manager.generate_chunks();
@@ -76,15 +77,18 @@ async fn main() {
                 ref event,
                 window_id,
             } => {
-                
-                
                 if window_id == window.id() {
-                    gamewindow.gui_renderer.handle_input(gamewindow.window.clone(), event);
-                    match event {
-                        WindowEvent::CloseRequested | WindowEvent::KeyboardInput {event: KeyEvent {
-                            physical_key: PhysicalKey::Code(KeyCode::Escape), ..
-                        }, ..} => {
 
+                    let consumed = gamewindow.gui_renderer.handle_input(gamewindow.window.clone(), event);
+
+                    match event {
+                        WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
+                            workspace.input_service.process_key_input(event, consumed).block_on();
+                        },
+                        WindowEvent::MouseInput { device_id, state, button } => {
+                            
+                        },
+                        WindowEvent::CloseRequested => {
                             control_flow.exit()
                         },
                         WindowEvent::Resized(physical_size) => {

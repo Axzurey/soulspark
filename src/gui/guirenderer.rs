@@ -33,8 +33,9 @@ impl GuiRenderer {
         }
     }
 
-    pub fn handle_input(&mut self, window: Arc<Window>, event: &WindowEvent) {
-        let _ = self.state.on_window_event(&window, event);
+    pub fn handle_input(&mut self, window: Arc<Window>, event: &WindowEvent) -> bool {
+        let e = self.state.on_window_event(&window, event);
+        e.consumed
     }
 
     pub fn draw(
