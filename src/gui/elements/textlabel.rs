@@ -1,26 +1,25 @@
+use crate::util::threadsignal::MonoThreadSignal;
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
-
+use super::super::{guiobject::GuiObject, uistate::GuiPosition};
 use cgmath::Vector2;
-use eframe::egui::Id;
+use eframe::egui::{Label, Id};
+use pollster::FutureExt;
 
-use crate::{gui::{guiobject::GuiObject, uistate::{GuiPosition, MouseButton}}, util::threadsignal::MonoThreadSignal};
-
-pub struct Slider {
+pub struct TextLabel {
     children: Vec<Arc<RwLock<dyn GuiObject>>>,
     name: String,
     id: Id,
     position: GuiPosition,
     enabled: bool,
     interactable: bool,
-    pub on_move: MonoThreadSignal<MouseButton>,
-    pub on_release: MonoThreadSignal<()>,
-    pub min: f32,
-    pub max: f32,
-    pub value: f32
+    pub on_hover_enter: MonoThreadSignal<()>,
+    text: String,
+
+    hovered: bool,
 }
 
-impl Slider {
-    pub fn new(name: String) -> Arc<RwLock<Self>> {
+impl TextLabel {
+    pub fn new(name: String, text: String) -> Arc<RwLock<Self>> {
         Arc::new(RwLock::new(Self {
             children: Vec::new(),
             name: name.clone(),
@@ -28,16 +27,14 @@ impl Slider {
             position: GuiPosition::Position(Vector2::new(0., 0.)),
             enabled: true,
             interactable: true,
-            on_move: MonoThreadSignal::new(),
-            on_release: MonoThreadSignal::new(),
-            max: 10.0,
-            min: 0.0,
-            value: 2.5
+            on_hover_enter: MonoThreadSignal::new(),
+            text,
+            hovered: false
         }))
     }
 }
 
-impl GuiObject for Slider {
+impl GuiObject for RwLockWriteGuard<'_, TextLabel> {
     fn get_children(&self) -> &Vec<Arc<RwLock<dyn GuiObject>>> {
         &self.children
     }
@@ -48,14 +45,18 @@ impl GuiObject for Slider {
         self.name = name;
     }
     fn render(&mut self, ctx: &eframe::egui::Context, ui: &mut eframe::egui::Ui) {
-        let r = self.min..=self.max;
-        let sliderraw = eframe::egui::Slider::new(&mut self.value, r);
+        let labelraw = Label::new(&self.text);
         
-        let slider = ui.add_sized([200., 50.], sliderraw);
+        let label = ui.add_sized([200., 50.], labelraw);
+
+        if label.hovered() && !self.hovered {
+            self.hovered = true;
+            self.on_hover_enter.dispatch(()).block_on();
+        }
     }
 }
 
-impl GuiObject for RwLockWriteGuard<'_, Slider> {
+impl GuiObject for TextLabel {
     fn get_children(&self) -> &Vec<Arc<RwLock<dyn GuiObject>>> {
         &self.children
     }
@@ -66,11 +67,16 @@ impl GuiObject for RwLockWriteGuard<'_, Slider> {
         self.name = name;
     }
     fn render(&mut self, ctx: &eframe::egui::Context, ui: &mut eframe::egui::Ui) {
-        let r = self.min..=self.max;
-        let sliderraw = eframe::egui::Slider::new(&mut self.value, r);
+        let labelraw = Label::new(&self.text);
         
-        let slider = ui.add_sized([200., 50.], sliderraw);
-        
-        
+        let label = ui.add_sized([200., 50.], labelraw);
+
+        if label.hovered() && !self.hovered {
+            self.hovered = true;
+            self.on_hover_enter.dispatch(()).block_on();
+        }
+        else {
+            self.hovered = false;
+        }
     }
 }
