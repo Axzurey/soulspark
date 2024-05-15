@@ -27,8 +27,8 @@ pub struct Chunk {
     pub seed: u32,
     grid: [Vec<Arc<RwLock<dyn Block + Send + Sync>>>; 16],
     
-    //(vertex, index, n)
-    solid_buffers: Vec<(wgpu::Buffer, wgpu::Buffer, Vec<u32>)>,
+    //(vertex, index, len_indices)
+    solid_buffers: Vec<(wgpu::Buffer, wgpu::Buffer, u32)>,
 
 }
 

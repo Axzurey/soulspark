@@ -1,5 +1,9 @@
 use std::mem;
 
+use cgmath::InnerSpace;
+
+use crate::blocks::block::BlockFace;
+
 use super::vertex::Vertex;
 
 #[repr(C)]
@@ -13,6 +17,93 @@ pub struct SurfaceVertex {
     pub diffuse_texture_index: u32,
     pub normal_texture_index: u32,
     pub emissive_texture_index: u32
+}
+
+impl SurfaceVertex {
+    pub fn from_position(pos: [f32; 3], face: BlockFace, nth: i32, texture_indices: (usize, usize, usize)) -> SurfaceVertex {
+        let face_vector = match face {
+            BlockFace::Top => [0., 1., 0.],
+            BlockFace::Bottom => [0., -1., 0.],
+            BlockFace::Right => [1., 0., 0.],
+            BlockFace::Left => [-1., 0., 0.],
+            BlockFace::Front => [0., 0., 1.],
+            BlockFace::Back => [0., 0., -1.],
+        };
+
+        let tex_coords = match nth {
+            3 => [0., 0.],
+            2 => [1., 0.],
+            1 => [0., 1.],
+            0 => [1., 1.],
+            _ => panic!("Invalid number {}", nth)
+        };
+    
+        SurfaceVertex {
+            position: pos,
+            normal: face_vector,
+            tex_coords,
+            tangent: [0., 0., 0.],
+            bitangent: [0., 0., 0.],
+            diffuse_texture_index: texture_indices.0 as u32,
+            normal_texture_index: texture_indices.1 as u32,
+            emissive_texture_index: texture_indices.2 as u32
+        }
+    }
+}
+
+pub fn calculate_tangents_inplace_surfacevertex(vertices: &mut Vec<SurfaceVertex>, indices: &mut Vec<u32>) {
+
+    let mut triangles_incl = vec![0; vertices.len()];
+
+    for c in indices.chunks(3) {
+        let v0 = vertices.get(c[0] as usize).unwrap();
+        let v1 = vertices.get(c[1] as usize).unwrap();
+        let v2 = vertices.get(c[2] as usize).unwrap();
+
+        let pos0: cgmath::Vector3<_> = v0.position.into();
+        let pos1: cgmath::Vector3<_> = v1.position.into();
+        let pos2: cgmath::Vector3<_> = v2.position.into();
+
+        let uv0: cgmath::Vector2<_> = v0.tex_coords.into();
+        let uv1: cgmath::Vector2<_> = v1.tex_coords.into();
+        let uv2: cgmath::Vector2<_> = v2.tex_coords.into();
+
+        let delta_pos1 = pos1 - pos0;
+        let delta_pos2 = pos2 - pos0;
+
+        let delta_uv1 = uv1 - uv0;
+        let delta_uv2 = uv2 - uv0;
+
+        let r = 1.0 / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
+        let tangent = (delta_pos1 * delta_uv2.y - delta_pos2 * delta_uv1.y) * r;
+
+        let bitangent = (delta_pos2 * delta_uv1.x - delta_pos1 * delta_uv2.x) * -r;
+
+        vertices[c[0] as usize].tangent =
+            (tangent + cgmath::Vector3::from(vertices[c[0] as usize].tangent)).into();
+        vertices[c[1] as usize].tangent =
+            (tangent + cgmath::Vector3::from(vertices[c[1] as usize].tangent)).into();
+        vertices[c[2] as usize].tangent =
+            (tangent + cgmath::Vector3::from(vertices[c[2] as usize].tangent)).into();
+        vertices[c[0] as usize].bitangent = 
+            (bitangent + cgmath::Vector3::from(vertices[c[0] as usize].bitangent)).into();
+        vertices[c[1] as usize].bitangent =
+            (bitangent + cgmath::Vector3::from(vertices[c[1] as usize].bitangent)).into();
+        vertices[c[2] as usize].bitangent =
+            (bitangent + cgmath::Vector3::from(vertices[c[2] as usize].bitangent)).into();
+
+        triangles_incl[c[0] as usize] += 1;
+        triangles_incl[c[1] as usize] += 1;
+        triangles_incl[c[2] as usize] += 1;
+    }
+
+    for (i, n) in triangles_incl.into_iter().enumerate() {
+        let denom = 1.0 / n as f32;
+        let v = &mut vertices[i];
+        //todo: double check if these are supposed to be normalized
+        v.tangent = (cgmath::Vector3::from(v.tangent) * denom).normalize().into();
+        v.bitangent = (cgmath::Vector3::from(v.bitangent) * denom).normalize().into();
+    }
 }
 
 impl Vertex for SurfaceVertex {
