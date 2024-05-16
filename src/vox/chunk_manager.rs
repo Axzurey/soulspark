@@ -2,6 +2,7 @@ use std::{collections::HashMap, sync::{Arc, RwLock}};
 
 use cgmath::{Vector2, Vector3};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
+use stopwatch::Stopwatch;
 use wgpu::util::DeviceExt;
 
 use crate::{blocks::block::{Block, BlockFace}, engine::surfacevertex::{calculate_tangents_inplace_surfacevertex, SurfaceVertex}};
@@ -59,6 +60,7 @@ impl ChunkManager {
     }
 
     pub fn mesh_slice(&self, device: &wgpu::Device, chunk: &Chunk, y_slice: u32) -> (wgpu::Buffer, wgpu::Buffer, u32) {
+        let t = Stopwatch::start_new();
         let mut vertices: Vec<SurfaceVertex> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
         let pos = Vector3::new(chunk.position.x * 16, 0, chunk.position.y * 16);
@@ -66,7 +68,7 @@ impl ChunkManager {
         let rel_abs_z = chunk.position.y * 16;
 
         for x in 0..16 {
-            for z in 0..16 { 
+            for z in 0..16 {
                 for y in y_slice * 16..(y_slice + 1) * 16 {
                     let block_at = chunk.get_block_at(x, y, z);
 
@@ -81,7 +83,7 @@ impl ChunkManager {
                     let right = get_block_at_absolute((x as i32) + rel_abs_x + 1, y as i32, (z as i32) + rel_abs_z, &self.chunks);
                     let left = get_block_at_absolute((x as i32) + rel_abs_x - 1, y as i32, (z as i32) + rel_abs_z, &self.chunks);
                     
-                    if front.is_none() || (front.is_some() && front.clone().unwrap().read().unwrap().has_partial_transparency( )) {
+                    if front.is_none() || (front.is_some() && front.clone().unwrap().read().unwrap().has_partial_transparency()) {
                         let current_l = vertices.len();
                         push_n(&mut indices, current_l as u32, [0, 1, 2, 1, 3, 2]);
 
@@ -156,10 +158,12 @@ impl ChunkManager {
         });
 
         let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some(&format!("Index Buffer")),
+            label: Some(&format!("Chunk Index Buffer")),
             contents: bytemuck::cast_slice(&indices),
             usage: wgpu::BufferUsages::INDEX,
         });
+
+        println!("Took {}ms to mesh", t.elapsed_ms());
 
         (vertex_buffer, index_buffer, ilen)
     }
@@ -167,7 +171,7 @@ impl ChunkManager {
     pub fn mesh_chunk(&mut self, device: &wgpu::Device, index: u32) {
         let chunk = self.chunks.get(&index).unwrap();
 
-        let slices = (0..16).into_par_iter();
+        let slices = (0..16).into_iter();
 
         let buffers = slices.map(|s| {
             self.mesh_slice(device, chunk, s)

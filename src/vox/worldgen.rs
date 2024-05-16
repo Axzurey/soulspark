@@ -141,9 +141,39 @@ pub fn generate_surface_height(seed: u32, x: i32, z: i32) -> i32 {
 
     let mut height = cz;
 
-    height += perlin_octaved_2d(seed, x, z, 6, 1.1, 1.3, 0.2, 2.0, 75.0) 
-    * 20.0 * pz * (1.0 - fz);
+    height += perlin_octaved_2d(seed, x, z, *uoctaves.read().unwrap(), *uamplitude.read().unwrap(), 
+    *ufreq.read().unwrap(), *upersistence_a.read().unwrap(), *upersistence_f.read().unwrap(),
+     *uscale.read().unwrap()
+    ) 
+    * (*uheughtmulti.read().unwrap()) * pz * (1.0 - fz);
 
     height.round() as i32
 }
 
+static uheughtmulti: Lazy<RwLock<f32>> = Lazy::new(|| {
+    RwLock::new(20.)
+});
+
+static uoctaves: Lazy<RwLock<i32>> = Lazy::new(|| {
+    RwLock::new(6)
+});
+
+static uamplitude: Lazy<RwLock<f32>> = Lazy::new(|| {
+    RwLock::new(1.1)
+});
+
+static ufreq: Lazy<RwLock<f32>> = Lazy::new(|| {
+    RwLock::new(1.2)
+});
+
+static upersistence_a: Lazy<RwLock<f32>> = Lazy::new(|| {
+    RwLock::new(0.2)
+});
+
+static upersistence_f: Lazy<RwLock<f32>> = Lazy::new(|| {
+    RwLock::new(2.0)
+});
+
+static uscale: Lazy<RwLock<f32>> = Lazy::new(|| {
+    RwLock::new(75.)
+});

@@ -4,3 +4,4 @@ pub mod screenui;
 pub mod slider;
 pub mod textlabel;
 pub mod uialign;
+pub mod table;

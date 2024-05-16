@@ -35,6 +35,7 @@ egui-wgpu = {version = "0.27.2", features = ["winit"]}
 egui-winit = "0.27.2"
 glam = "0.27.0"
 getset = "0.1.2"
+egui_extras = "0.27.2"
 
 [build-dependencies]
 anyhow = "1.0"

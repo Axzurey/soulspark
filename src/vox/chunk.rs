@@ -38,10 +38,9 @@ impl Chunk {
         let iter_layers = (0..16).into_par_iter();
 
         let blocks = iter_layers.map(|y_slice| {
-            let mut out: Vec<Arc<RwLock<dyn Block + Send + Sync>>> = Vec::from_iter(std::iter::repeat_with(|| {
-                let air: Arc<RwLock<dyn Block + Send + Sync>> = Arc::new(RwLock::new(AirBlock::new(Vector3::new(0, 0, 0), Vector3::new(0, 0, 0))));
-                air
-            }).take(4096));
+            let mut out: Vec<Arc<RwLock<dyn Block + Send + Sync>>> = Vec::with_capacity(4096);
+
+            let uninit = out.spare_capacity_mut();
 
             for x in 0..16 {
                 for z in 0..16 {
@@ -72,10 +71,13 @@ impl Chunk {
                             )
                         };
 
-                        out[local_xyz_to_index(x, y as u32, z) as usize] = block;
+                        uninit[local_xyz_to_index(x, y as u32, z) as usize].write(block);
                     }
                 }
             }
+
+            unsafe { out.set_len(4096) };
+
             out
         }).collect::<Vec<Vec<Arc<RwLock<dyn Block + Send + Sync>>>>>();
 
