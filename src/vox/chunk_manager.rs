@@ -7,7 +7,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use stopwatch::Stopwatch;
 use wgpu::util::DeviceExt;
 
-use crate::{blocks::block::{Block, BlockFace}, engine::surfacevertex::{calculate_tangents_inplace_surfacevertex, SurfaceVertex}};
+use crate::{blocks::block::{Block, BlockFace, BlockType}, engine::surfacevertex::{calculate_tangents_inplace_surfacevertex, SurfaceVertex}};
 
 use super::chunk::{xz_to_index, Chunk};
 
@@ -18,7 +18,7 @@ pub struct ChunkManager {
     noise_gen: Perlin
 }
 
-pub fn get_block_at_absolute(x: i32, y: i32, z: i32, chunks: &HashMap<u32, Chunk>) -> Option<Arc<RwLock<dyn Block + Send + Sync>>> {
+pub fn get_block_at_absolute(x: i32, y: i32, z: i32, chunks: &HashMap<u32, Chunk>) -> Option<&BlockType> {
     if y < 0 || y > 255 {return None};
     let chunk_x = x.div_euclid(16);
     let chunk_z = z.div_euclid(16);
@@ -38,7 +38,7 @@ impl ChunkManager {
     pub fn new() -> Self {
         Self {
             chunks: HashMap::new(),
-            render_distance: 15,
+            render_distance: 20,
             seed: 52352,
             noise_gen: Perlin::new(rand::rngs::StdRng::seed_from_u64(52352).next_u32())
         }
@@ -77,7 +77,7 @@ impl ChunkManager {
                 for y in y_slice * 16..(y_slice + 1) * 16 {
                     let block_at = chunk.get_block_at(x, y, z);
 
-                    let current = block_at.read().unwrap();
+                    let current = block_at;
 
                     if current.has_partial_transparency() || !current.does_mesh() {continue;};
 
@@ -88,7 +88,7 @@ impl ChunkManager {
                     let right = get_block_at_absolute((x as i32) + rel_abs_x + 1, y as i32, (z as i32) + rel_abs_z, &self.chunks);
                     let left = get_block_at_absolute((x as i32) + rel_abs_x - 1, y as i32, (z as i32) + rel_abs_z, &self.chunks);
                     
-                    if front.is_some() && front.clone().unwrap().read().unwrap().has_partial_transparency() {
+                    if front.is_some() && front.unwrap().has_partial_transparency() {
                         let current_l = vertices.len();
                         push_n(&mut indices, current_l as u32, [0, 1, 2, 1, 3, 2]);
 
@@ -98,7 +98,7 @@ impl ChunkManager {
                         vertices.push(SurfaceVertex::from_position([(pos.x + x as i32 + 1) as f32, (pos.y + y as i32 + 1) as f32, (pos.z + z as i32 + 1) as f32], BlockFace::Front, 3, current.get_surface_textures(BlockFace::Front)));
                     }
 
-                    if back.is_some() && back.clone().unwrap().read().unwrap().has_partial_transparency() {
+                    if back.is_some() && back.unwrap().has_partial_transparency() {
                         let current_l = vertices.len();
                         push_n(&mut indices, current_l as u32, [2, 1, 0, 2, 3, 1]);
 
@@ -108,7 +108,7 @@ impl ChunkManager {
                         vertices.push(SurfaceVertex::from_position([(pos.x + x as i32 + 1) as f32, (pos.y + y as i32 + 1) as f32, (pos.z + z as i32) as f32], BlockFace::Back, 3, current.get_surface_textures(BlockFace::Back)));
                     }
 
-                    if right.is_some() && right.clone().unwrap().read().unwrap().has_partial_transparency() {
+                    if right.is_some() && right.unwrap().has_partial_transparency() {
                         let current_l = vertices.len();
                         push_n(&mut indices, current_l as u32, [2, 1, 0, 2, 3, 1]);
 
@@ -118,7 +118,7 @@ impl ChunkManager {
                         vertices.push(SurfaceVertex::from_position([(pos.x + x as i32 + 1) as f32, (pos.y + y as i32 + 1) as f32, (pos.z + z as i32 + 1) as f32], BlockFace::Right, 3, current.get_surface_textures(BlockFace::Right)));
                     }
 
-                    if left.is_some() && left.clone().unwrap().read().unwrap().has_partial_transparency() {
+                    if left.is_some() && left.unwrap().has_partial_transparency() {
                         let current_l = vertices.len();
                         push_n(&mut indices, current_l as u32, [0, 1, 2, 1, 3, 2]);
 
@@ -128,7 +128,7 @@ impl ChunkManager {
                         vertices.push(SurfaceVertex::from_position([(pos.x + x as i32) as f32, (pos.y + y as i32 + 1) as f32, (pos.z + z as i32 + 1) as f32], BlockFace::Left, 3, current.get_surface_textures(BlockFace::Left)));
                     }
 
-                    if up.is_some() && up.clone().unwrap().read().unwrap().has_partial_transparency() {
+                    if up.is_some() && up.unwrap().has_partial_transparency() {
                         let current_l = vertices.len();
                         push_n(&mut indices, current_l as u32, [0, 1, 2, 1, 3, 2]);
 
@@ -138,7 +138,7 @@ impl ChunkManager {
                         vertices.push(SurfaceVertex::from_position([(pos.x + x as i32 + 1) as f32, (pos.y + y as i32 + 1) as f32, (pos.z + z as i32 + 1) as f32], BlockFace::Top, 3, current.get_surface_textures(BlockFace::Top)));
                     }
 
-                    if down.is_some() && down.clone().unwrap().read().unwrap().has_partial_transparency() {
+                    if down.is_some() && down.unwrap().has_partial_transparency() {
                         let current_l = vertices.len();
                         push_n(&mut indices, current_l as u32, [2, 1, 0, 2, 3, 1]);
 
@@ -152,7 +152,7 @@ impl ChunkManager {
             }
         }
 
-        //calculate_tangents_inplace_surfacevertex(&mut vertices, &mut indices);
+        calculate_tangents_inplace_surfacevertex(&mut vertices, &mut indices);
 
         let ilen = indices.len() as u32;
 

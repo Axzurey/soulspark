@@ -6,7 +6,7 @@ use noise::Perlin;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use stopwatch::Stopwatch;
 
-use crate::blocks::{airblock::AirBlock, block::Block, dirtblock::DirtBlock, grassblock::GrassBlock};
+use crate::blocks::{airblock::AirBlock, block::{Block, BlockType}, dirtblock::DirtBlock, grassblock::GrassBlock};
 
 use super::worldgen::generate_surface_height;
 
@@ -25,7 +25,7 @@ pub fn xz_to_index(x: i32, z: i32) -> u32 {
 
 pub struct Chunk {
     pub position: Vector2<i32>,
-    grid: [Vec<Arc<RwLock<dyn Block + Send + Sync>>>; 16],
+    grid: Vec<Vec<BlockType>>,
     
     //(vertex, index, len_indices)
     solid_buffers: Vec<(wgpu::Buffer, wgpu::Buffer, u32)>,
@@ -35,10 +35,10 @@ impl Chunk {
     pub fn new(position: Vector2<i32>, noisegen: Perlin) -> Self {
         let t = Stopwatch::start_new();
 
-        let iter_layers = (0..16).into_par_iter();
+        let iter_layers = (0..16).into_iter();
 
         let blocks = iter_layers.map(|y_slice| {
-            let mut out: Vec<Arc<RwLock<dyn Block + Send + Sync>>> = Vec::with_capacity(4096);
+            let mut out: Vec<BlockType> = Vec::with_capacity(4096);
 
             let uninit = out.spare_capacity_mut();
 
@@ -51,24 +51,23 @@ impl Chunk {
                     for y in 0..16 {
                         let abs_y = (y + y_slice as u32 * 16) as i32;
 
-                        let block: Arc<RwLock<dyn Block + Send + Sync>> =
+                        let block: BlockType =
                         if abs_y == floor_level {
-                            Arc::new(RwLock::new(GrassBlock::new(
+                            Box::new(GrassBlock::new(
                                 Vector3::new(x, y as u32, z), 
                                 Vector3::new(abs_x, abs_y, abs_z)))
-                            )
+                            
                         }
                         else if abs_y < floor_level {
-                            Arc::new(RwLock::new(DirtBlock::new(
+                            Box::new(DirtBlock::new(
                                 Vector3::new(x, y as u32, z), 
                                 Vector3::new(abs_x, abs_y, abs_z)))
-                            )
+                            
                         }
                         else {
-                            Arc::new(RwLock::new(AirBlock::new(
+                            Box::new(AirBlock::new(
                                 Vector3::new(x, y as u32, z), 
                                 Vector3::new(abs_x, abs_y, abs_z)))
-                            )
                         };
 
                         uninit[local_xyz_to_index(x, y as u32, z) as usize].write(block);
@@ -79,23 +78,19 @@ impl Chunk {
             unsafe { out.set_len(4096) };
 
             out
-        }).collect::<Vec<Vec<Arc<RwLock<dyn Block + Send + Sync>>>>>();
+        }).collect::<Vec<Vec<BlockType>>>();
 
-        let out_size = blocks.len();
-
-        let block_grid: [Vec<Arc<RwLock<dyn Block + Send + Sync>>>; 16] = blocks.try_into().expect(&format!("Error in chunk generator: BlockGrid length is not exactly 16, but rather, {}.", out_size));
-
-        println!("Generated chunk in {}ms", t.elapsed_ms());
+        println!("Took {}ms to generate chunk", t.elapsed_ms());
 
         Self {
             position,
-            grid: block_grid,
+            grid: blocks,
             solid_buffers: Vec::new()
         }
     }
 
-    pub fn get_block_at(&self, x: u32, y: u32, z: u32) -> Arc<RwLock<dyn Block + Send + Sync>> {
-        self.grid[(y / 16) as usize][local_xyz_to_index(x % 16, y % 16, z % 16) as usize].clone()
+    pub fn get_block_at(&self, x: u32, y: u32, z: u32) -> &BlockType {
+        &self.grid[(y / 16) as usize][local_xyz_to_index(x % 16, y % 16, z % 16) as usize]
     }
 
     pub fn set_solid_buffer(&mut self, slice: u32, buffers: (wgpu::Buffer, wgpu::Buffer, u32)) {

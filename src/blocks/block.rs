@@ -1,6 +1,8 @@
 use cgmath::Vector3;
 use core::fmt::Debug;
 
+pub type BlockType = Box<dyn Block + Send + Sync>;
+
 pub enum BlockFace {
     Top,
     Bottom,
