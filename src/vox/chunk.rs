@@ -2,6 +2,7 @@ use std::sync::{Arc, RwLock};
 
 use cached::proc_macro::cached;
 use cgmath::{Vector2, Vector3};
+use noise::Perlin;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use stopwatch::Stopwatch;
 
@@ -24,7 +25,6 @@ pub fn xz_to_index(x: i32, z: i32) -> u32 {
 
 pub struct Chunk {
     pub position: Vector2<i32>,
-    pub seed: u32,
     grid: [Vec<Arc<RwLock<dyn Block + Send + Sync>>>; 16],
     
     //(vertex, index, len_indices)
@@ -32,7 +32,7 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn new(position: Vector2<i32>, seed: u32) -> Self {
+    pub fn new(position: Vector2<i32>, noisegen: Perlin) -> Self {
         let t = Stopwatch::start_new();
 
         let iter_layers = (0..16).into_par_iter();
@@ -47,7 +47,7 @@ impl Chunk {
                     let abs_x = ((x as i32) + position.x * 16) as i32;
                     let abs_z = ((z as i32) + position.y * 16) as i32;
 
-                    let floor_level = generate_surface_height(seed, abs_x, abs_z);
+                    let floor_level = generate_surface_height(noisegen, abs_x, abs_z);
                     for y in 0..16 {
                         let abs_y = (y + y_slice as u32 * 16) as i32;
 
@@ -89,7 +89,6 @@ impl Chunk {
 
         Self {
             position,
-            seed,
             grid: block_grid,
             solid_buffers: Vec::new()
         }

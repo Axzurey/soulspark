@@ -1,6 +1,8 @@
 use std::{collections::HashMap, sync::{Arc, RwLock}};
 
 use cgmath::{Vector2, Vector3};
+use noise::Perlin;
+use rand::{RngCore, SeedableRng};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use stopwatch::Stopwatch;
 use wgpu::util::DeviceExt;
@@ -12,7 +14,8 @@ use super::chunk::{xz_to_index, Chunk};
 pub struct ChunkManager {
     pub chunks: HashMap<u32, Chunk>,
     render_distance: u32,
-    seed: u32
+    seed: u32,
+    noise_gen: Perlin
 }
 
 pub fn get_block_at_absolute(x: i32, y: i32, z: i32, chunks: &HashMap<u32, Chunk>) -> Option<Arc<RwLock<dyn Block + Send + Sync>>> {
@@ -22,7 +25,7 @@ pub fn get_block_at_absolute(x: i32, y: i32, z: i32, chunks: &HashMap<u32, Chunk
 
     let chunk = chunks.get(&xz_to_index(chunk_x, chunk_z))?;
 
-    Some(chunk.get_block_at(x.rem_euclid(16) as u32, y as u32, z.rem_euclid(16) as u32))
+    Some(chunk.get_block_at(x as u32, y as u32, z as u32))
 }
 
 pub fn push_n(vec: &mut Vec<u32>, start: u32, shifts: [u32; 6]) {
@@ -35,15 +38,17 @@ impl ChunkManager {
     pub fn new() -> Self {
         Self {
             chunks: HashMap::new(),
-            render_distance: 10,
-            seed: 52352
+            render_distance: 15,
+            seed: 52352,
+            noise_gen: Perlin::new(rand::rngs::StdRng::seed_from_u64(52352).next_u32())
         }
     }
 
     pub fn generate_chunks(&mut self) {
+
         for x in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
             for z in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
-                let chunk = Chunk::new(Vector2::new(x, z), self.seed);
+                let chunk = Chunk::new(Vector2::new(x, z), self.noise_gen);
                 self.chunks.insert(xz_to_index(x, z), chunk);
             }
         }
@@ -147,7 +152,7 @@ impl ChunkManager {
             }
         }
 
-        calculate_tangents_inplace_surfacevertex(&mut vertices, &mut indices);
+        //calculate_tangents_inplace_surfacevertex(&mut vertices, &mut indices);
 
         let ilen = indices.len() as u32;
 

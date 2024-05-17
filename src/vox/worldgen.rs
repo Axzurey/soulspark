@@ -1,8 +1,7 @@
 use std::sync::RwLock;
 
-use noise::NoiseFn;
+use noise::{NoiseFn, Perlin};
 use once_cell::sync::Lazy;
-use rand::{RngCore, SeedableRng};
 use splines::{Interpolation, Key, Spline};
 
 static SPLINE_CAVE_Y_MOD: Lazy<RwLock<Spline<f32, f32>>> = Lazy::new(|| {
@@ -63,13 +62,9 @@ static SPLINE_FLATNESS: Lazy<RwLock<Spline<f32, f32>>> = Lazy::new(|| {
     ]))
 });
 
-pub fn perlin_octaved_3d(seed: u32, x: i32, y: i32, z: i32, octaves: i32, mut amp: f32, mut freq: f32, persistence_a: f32, persistence_f: f32, zoom: f32) -> f32 {
+pub fn perlin_octaved_3d(perlin: Perlin, x: i32, y: i32, z: i32, octaves: i32, mut amp: f32, mut freq: f32, persistence_a: f32, persistence_f: f32, zoom: f32) -> f32 {
     let mut total: f32 = 0.0;
     let mut amp_sum: f32 = 0.0;
-
-    let seeded = rand::rngs::StdRng::seed_from_u64(seed as u64).next_u32();
-
-    let perlin = noise::Perlin::new(seeded);
 
     let zoom_inverse = 1. / zoom;
 
@@ -87,13 +82,9 @@ pub fn perlin_octaved_3d(seed: u32, x: i32, y: i32, z: i32, octaves: i32, mut am
     total / amp_sum
 }
 
-pub fn perlin_octaved_2d(seed: u32, x: i32, z: i32, octaves: i32, mut amp: f32, mut freq: f32, persistence_a: f32, persistence_f: f32, zoom: f32) -> f32 {
+pub fn perlin_octaved_2d(perlin: Perlin, x: i32, z: i32, octaves: i32, mut amp: f32, mut freq: f32, persistence_a: f32, persistence_f: f32, zoom: f32) -> f32 {
     let mut total: f32 = 0.0;
     let mut amp_sum: f32 = 0.0;
-
-    let seeded = rand::rngs::StdRng::seed_from_u64(seed as u64).next_u32();
-
-    let perlin = noise::Perlin::new(seeded);
 
     for i in 0..octaves {
         let v = perlin.get([
@@ -109,29 +100,29 @@ pub fn perlin_octaved_2d(seed: u32, x: i32, z: i32, octaves: i32, mut amp: f32, 
     total / amp_sum
 }
 
-pub fn get_modifiers(seed: u32, x: i32, z: i32) -> [f32; 3] {
-    let continentalness = perlin_octaved_2d(seed, x, z, 6, 1.3, 1.2, 0.2, 2.0, 400.0) * 0.5 + 0.5;
-    let flatness = perlin_octaved_2d(seed, x, z, 6, 0.7, 1.0, 0.2, 2.0, 400.0).abs();
-    let peaks = perlin_octaved_2d(seed, x, z, 6, 1.5, 1.3, 0.2, 2.0, 400.0) * 0.5 + 0.5;
+pub fn get_modifiers(noisegen: Perlin, x: i32, z: i32) -> [f32; 3] {
+    let continentalness = perlin_octaved_2d(noisegen, x, z, 6, 1.3, 1.2, 0.2, 2.0, 400.0) * 0.5 + 0.5;
+    let flatness = perlin_octaved_2d(noisegen, x, z, 6, 0.7, 1.0, 0.2, 2.0, 400.0).abs();
+    let peaks = perlin_octaved_2d(noisegen, x, z, 6, 1.5, 1.3, 0.2, 2.0, 400.0) * 0.5 + 0.5;
 
     [continentalness, flatness, peaks]
 }
 
-pub fn is_cave(seed: u32, x: i32, y: i32, z: i32) -> bool {
-    (1. - perlin_octaved_3d(seed, x, y, z, 1, 1.3, 1.4, 0.5, 0.5, 35.).abs()) 
+pub fn is_cave(noisegen: Perlin, x: i32, y: i32, z: i32) -> bool {
+    (1. - perlin_octaved_3d(noisegen, x, y, z, 1, 1.3, 1.4, 0.5, 0.5, 35.).abs()) 
         * SPLINE_WORM.read().unwrap().sample(y as f32).expect(&format!("y is {}", y)) <= 0.5 
-    //|| !get_density_for_cave(seed, x, y, z)
+    //|| !get_density_for_cave(noisegen, x, y, z)
 }
 
-pub fn get_density_for_cave(seed: u32, x: i32, y: i32, z: i32) -> bool {
-    let p = perlin_octaved_3d(seed, x, y, z, 1, 1.1, 1.35, 0.6, 1.1, 1.) * 10.;
+pub fn get_density_for_cave(noisegen: Perlin, x: i32, y: i32, z: i32) -> bool {
+    let p = perlin_octaved_3d(noisegen, x, y, z, 1, 1.1, 1.35, 0.6, 1.1, 1.) * 10.;
 
     p * SPLINE_CAVE_Y_MOD.read().unwrap().sample(y as f32).unwrap() < 1.
 }
 
-pub fn generate_surface_height(seed: u32, x: i32, z: i32) -> i32 {
+pub fn generate_surface_height(noisegen: Perlin, x: i32, z: i32) -> i32 {
 
-    let [c, f, p] = get_modifiers(seed, x, z);
+    let [c, f, p] = get_modifiers(noisegen, x, z);
 
     let [cz, fz, pz] = [
         SPLINE_CONTINENTALNESS.read().unwrap().sample(c).unwrap(),
@@ -141,39 +132,11 @@ pub fn generate_surface_height(seed: u32, x: i32, z: i32) -> i32 {
 
     let mut height = cz;
 
-    height += perlin_octaved_2d(seed, x, z, *uoctaves.read().unwrap(), *uamplitude.read().unwrap(), 
-    *ufreq.read().unwrap(), *upersistence_a.read().unwrap(), *upersistence_f.read().unwrap(),
-     *uscale.read().unwrap()
+    height += perlin_octaved_2d(noisegen, x, z, 6, 1.1, 
+    1.3, 0.2, 2.0,
+     75.
     ) 
-    * (*uheughtmulti.read().unwrap()) * pz * (1.0 - fz);
+    * (20.) * pz * (1.0 - fz);
 
     height.round() as i32
 }
-
-static uheughtmulti: Lazy<RwLock<f32>> = Lazy::new(|| {
-    RwLock::new(20.)
-});
-
-static uoctaves: Lazy<RwLock<i32>> = Lazy::new(|| {
-    RwLock::new(6)
-});
-
-static uamplitude: Lazy<RwLock<f32>> = Lazy::new(|| {
-    RwLock::new(1.1)
-});
-
-static ufreq: Lazy<RwLock<f32>> = Lazy::new(|| {
-    RwLock::new(1.2)
-});
-
-static upersistence_a: Lazy<RwLock<f32>> = Lazy::new(|| {
-    RwLock::new(0.2)
-});
-
-static upersistence_f: Lazy<RwLock<f32>> = Lazy::new(|| {
-    RwLock::new(2.0)
-});
-
-static uscale: Lazy<RwLock<f32>> = Lazy::new(|| {
-    RwLock::new(75.)
-});
