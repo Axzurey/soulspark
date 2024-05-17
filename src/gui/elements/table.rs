@@ -2,33 +2,35 @@ use std::{collections::HashMap, sync::{Arc, RwLock, RwLockWriteGuard}};
 
 use eframe::egui::{self, Id, ScrollArea, TextBuffer, TextEdit};
 use egui_extras::{Column, TableBuilder};
-use splines::Spline;
+use rand::{distributions::Alphanumeric, Rng};
 
 use crate::gui::guiobject::GuiObject;
 
-pub struct Table<K: std::cmp::Eq + std::hash::Hash + Into<String>, V> {
-    adornee: HashMap<K, V>,
+pub struct Table<V: eframe::egui::TextBuffer + Clone> {
     name: String,
     id: Id,
     children: Vec<Arc<RwLock<dyn GuiObject>>>,
     n_rows: u32,
-    keys: Vec<K>
+    keys: Vec<String>,
+    values: Vec<V>,
+    default_value: V
 }
 
-impl<K: std::cmp::Eq + std::hash::Hash + Into<String>, V> Table<K, V> {
-    pub fn new(name: String, adornee: HashMap<K, V>) -> Arc<RwLock<Self>> {
+impl<V: eframe::egui::TextBuffer + Clone> Table<V> {
+    pub fn new(name: String, default_value: V) -> Arc<RwLock<Self>> {
         Arc::new(RwLock::new(Self {
             name: name.clone(),
             id: Id::new(name),
-            adornee,
             children: Vec::new(),
             n_rows: 0,
-            keys: Vec::new()
+            keys: Vec::new(),
+            values: Vec::new(),
+            default_value
         }))
     }
 }
 
-impl<K: std::cmp::Eq + std::hash::Hash + Into<String>, V> GuiObject for RwLockWriteGuard<'_, Table<K, V>> {
+impl<V: eframe::egui::TextBuffer + Clone> GuiObject for RwLockWriteGuard<'_, Table<V>> {
     fn get_children(&self) -> &Vec<Arc<RwLock<dyn GuiObject>>> {
         &self.children
     }
@@ -43,7 +45,7 @@ impl<K: std::cmp::Eq + std::hash::Hash + Into<String>, V> GuiObject for RwLockWr
     }
 }
 
-impl<K: std::cmp::Eq + std::hash::Hash + Into<String>, V> GuiObject for Table<K, V> {
+impl<V: eframe::egui::TextBuffer + Clone> GuiObject for Table<V> {
     fn get_children(&self) -> &Vec<Arc<RwLock<dyn GuiObject>>> {
         &self.children
     }
@@ -70,16 +72,29 @@ impl<K: std::cmp::Eq + std::hash::Hash + Into<String>, V> GuiObject for Table<K,
         })
         .body(|mut body| {
             for i in 0..self.keys.len() {
-                let key = &self.keys[i];
-                let value = &self.adornee[key];
-
                 body.row(15.0, |mut row| {
                     row.col(|ui| {
-                        let text_buffer = 
-                        let t = TextEdit::singleline(key.into());
+                        let t = ui.text_edit_singleline(&mut self.keys[i]);
+                    });
+                    row.col(|ui| {
+                        let t = ui.text_edit_singleline(&mut self.values[i]);
                     });
                 });
             }
+            body.row(15.0, |mut row| {
+                row.col(|ui| {
+                    let btn = ui.button("Add Row");
+                    if btn.clicked() {
+                        let s: String = rand::thread_rng()
+                            .sample_iter(&Alphanumeric)
+                            .take(7)
+                            .map(char::from)
+                            .collect();
+                        self.keys.push(s);
+                        self.values.push(self.default_value.clone());
+                    }
+                });
+            });
         });
     }
 }

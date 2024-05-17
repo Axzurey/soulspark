@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use cgmath::{Point3, Vector3};
 use gen::primitive::PrimitiveBuilder;
 use gui::elements::slider::Slider;
+use gui::elements::table::Table;
 use gui::elements::textbutton::TextButton;
 use internal::window::GameWindow;
 use pollster::FutureExt;
@@ -46,6 +48,12 @@ async fn main() {
         );
     }
 
+    let test_map: HashMap<String, String> = HashMap::new();
+
+    let test_table = Table::new("test-table".to_string(), "hello!".to_string());
+
+    {gamewindow.screenui.write().unwrap().add_child(test_table);}
+
     let textbutton = TextButton::new("button!".to_owned(), "Hello Me!".to_owned());
 
     textbutton.write().unwrap().on_click.connect(|v| Box::pin(async {
@@ -63,12 +71,7 @@ async fn main() {
         move |event, control_flow| 
         match event {
             Event::DeviceEvent { device_id, event: DeviceEvent::Key(k) } => {
-                match k.physical_key {
-                    PhysicalKey::Code(v) => {
-                        workspace.current_camera.controller.process_keyboard_input(v, k.state);
-                    },
-                    _ => {}
-                }
+                
             },
             Event::DeviceEvent {event: DeviceEvent::MouseMotion { delta }, device_id } => {
                 workspace.current_camera.controller.process_mouse_input(delta.0, delta.1);
@@ -83,6 +86,14 @@ async fn main() {
 
                     match event {
                         WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
+                            match event.physical_key {
+                                PhysicalKey::Code(v) => {
+                                    if !consumed {
+                                        workspace.current_camera.controller.process_keyboard_input(v, event.state);
+                                    }
+                                },
+                                _ => {}
+                            }
                             workspace.input_service.process_key_input(event, consumed).block_on();
                         },
                         WindowEvent::MouseInput { device_id, state, button } => {
