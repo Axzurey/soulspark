@@ -7,6 +7,8 @@ use super::block::{Block, BlockFace};
 pub struct GrassBlock {
     relative_position: Vector3<u32>,
     absolute_position: Vector3<i32>,
+    sunlight_intensity: u8,
+    lights: [u8; 3]
 }
 
 impl GrassBlock {

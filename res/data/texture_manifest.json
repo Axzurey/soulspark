@@ -15,6 +15,12 @@
         "path": "textures/grass_top.png",
         "alias": "grass-top",
         "type": "diffuse",
-        "filter": "linear"
+        "filter": "nearest"
+    },
+    {
+        "path": "textures/stone.png",
+        "alias": "stone",
+        "type": "diffuse",
+        "filter": "nearest"
     }
 ]

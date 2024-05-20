@@ -1,11 +1,11 @@
-use std::{mem, sync::{Arc, RwLock}};
+use std::{mem::{self, size_of}, sync::{Arc, RwLock}};
 
 use cgmath::{Matrix3, Matrix4, Point3, SquareMatrix};
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use stopwatch::Stopwatch;
 use wgpu::{util::DeviceExt, BindGroupLayout, RenderPipeline, TextureFormat};
 
-use crate::{engine::{surfacevertex::SurfaceVertex, texture::Texture, texture_loader::{initialize_load_textures, preload_textures}, vertex::{ModelVertex, Vertex}}, gen::{object::RawObject, spotlight::{RawSpotLight, Spotlight}}, state::workspace::Workspace};
+use crate::{engine::{surfacevertex::SurfaceVertex, texture::Texture, texture_loader::{initialize_load_textures, preload_textures}, vertex::{ModelVertex, Vertex}}, gen::{object::RawObject, spotlight::{RawSpotLight, Spotlight}}, state::workspace::Workspace, vox::chunk::ChunkDataVertex};
 
 use super::{renderpipeline::create_render_pipeline, renderstorage::RenderStorage};
 
@@ -163,7 +163,7 @@ impl MainRenderer {
             &surface_pipeline_layout,
             surface_texture_format,
             Some(TextureFormat::Depth32Float),
-            &[SurfaceVertex::desc()],
+            &[SurfaceVertex::desc(), ChunkDataVertex::desc()],
             "res/shaders/surfaceshader.wgsl",
             true,
             true,
@@ -247,7 +247,7 @@ impl MainRenderer {
             global_bindgroup_layout,
             shadow_prebindgroup_layout,
             width: screendims.0,
-            height: screendims.1
+            height: screendims.1,
         }
     }
 
@@ -500,5 +500,71 @@ impl MainRenderer {
             }
         }
         println!("Frame took {}ms", frame_start.elapsed_ms());
+    }
+
+    pub fn render_surface(&mut self, 
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        output_texture: &mut wgpu::SurfaceTexture, 
+        output_view: &wgpu::TextureView, 
+        encoder: &mut wgpu::CommandEncoder,
+        camera_bindgroup: &wgpu::BindGroup,
+        workspace: &Workspace
+    ) {
+        let t = Stopwatch::start_new();
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("object render pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment { 
+                view: &output_view, 
+                resolve_target: None, 
+                ops: wgpu::Operations { 
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.1,
+                        g: 0.2,
+                        b: 0.3,
+                        a: 1.0
+                    }),
+                    store: wgpu::StoreOp::Store
+                }
+            })],
+            depth_stencil_attachment: Some(
+                wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.view,
+                    depth_ops: Some(
+                        wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(1.0),
+                            store: wgpu::StoreOp::Store
+                        }
+                    ),
+                    stencil_ops: None,
+                }
+            ),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        render_pass.set_pipeline(&self.surface_pipeline);
+        render_pass.set_bind_group(0, &self.texture_bindgroup, &[]);
+        render_pass.set_bind_group(1, camera_bindgroup, &[]);
+
+        for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
+            let out = chunk.get_solid_buffers();
+
+            let mut i = 0;
+
+            for (vertex_buffer, index_buffer, ilen) in out {
+                if *ilen == 0 {
+                    i += 1;
+                    continue;
+                };
+                
+                render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                render_pass.set_vertex_buffer(1, chunk.slice_vertex_buffers[i].slice(..));
+                render_pass.draw_indexed(0..*ilen, 0, 0..1);
+
+                i += 1;
+            }
+        }
+        //println!("frame: {}ms", t.elapsed_ms());
     }
 }

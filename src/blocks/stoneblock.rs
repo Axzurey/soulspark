@@ -4,26 +4,28 @@ use crate::engine::texture_loader::get_indices_from_texture;
 
 use super::block::Block;
 
-pub struct AirBlock {
+pub struct StoneBlock {
     relative_position: Vector3<u32>,
     absolute_position: Vector3<i32>,
     sunlight_intensity: u8,
     lights: [u8; 3]
 }
 
-impl AirBlock {
+impl StoneBlock {
     pub fn new(
         relative_position: Vector3<u32>,
         absolute_position: Vector3<i32>
     ) -> Self {
         Self {
             relative_position,
-            absolute_position
+            absolute_position,
+            sunlight_intensity: 0,
+            lights: [0, 0, 0]
         }
     }
 }
 
-impl Block for AirBlock {
+impl Block for StoneBlock {
     fn get_absolute_position(&self) -> Vector3<i32> {
         self.absolute_position
     }
@@ -33,15 +35,15 @@ impl Block for AirBlock {
     }
 
     fn has_partial_transparency(&self) -> bool {
-        true
-    }
-
-    fn does_mesh(&self) -> bool {
         false
     }
 
+    fn does_mesh(&self) -> bool {
+        true
+    }
+
     fn get_name(&self) -> String {
-        "dirt block".to_owned()
+        "stone block".to_owned()
     }
 
     fn is_fluid(&self) -> bool {
@@ -49,6 +51,7 @@ impl Block for AirBlock {
     }
 
     fn get_surface_textures(&self, face: super::block::BlockFace) -> (usize, usize, usize) {
-        (0, 0, 0)
+        (get_indices_from_texture("stone"), 0, 0)
     }
+    fn
 }

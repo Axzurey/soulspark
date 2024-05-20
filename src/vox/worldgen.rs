@@ -4,19 +4,19 @@ use noise::{NoiseFn, Perlin};
 use once_cell::sync::Lazy;
 use splines::{Interpolation, Key, Spline};
 
-static SPLINE_CAVE_Y_MOD: Lazy<RwLock<Spline<f32, f32>>> = Lazy::new(|| {
-    RwLock::new(Spline::from_vec(vec![
+static SPLINE_CAVE_Y_MOD: Lazy<Spline<f32, f32>> = Lazy::new(|| {
+    Spline::from_vec(vec![
         Key::new(0.0, 0., Interpolation::Linear),
         Key::new(6., 0.5, Interpolation::Linear),
         Key::new(16., 0.5, Interpolation::Linear),
         Key::new(50., 0.4, Interpolation::Linear),
         Key::new(64., 0.1, Interpolation::Linear),
         Key::new(256., 0.0, Interpolation::Linear),
-    ]))
+    ])
 });
 
-static SPLINE_WORM: Lazy<RwLock<Spline<f32, f32>>> = Lazy::new(|| {
-    RwLock::new(Spline::from_vec(vec![
+static SPLINE_WORM: Lazy<Spline<f32, f32>> = Lazy::new(|| {
+    Spline::from_vec(vec![
         Key::new(0., 100., Interpolation::Linear),
         Key::new(6., 0.7, Interpolation::Linear),
         Key::new(15., 0.7, Interpolation::Linear),
@@ -26,11 +26,11 @@ static SPLINE_WORM: Lazy<RwLock<Spline<f32, f32>>> = Lazy::new(|| {
         Key::new(80., 2.1, Interpolation::Linear),
         Key::new(150., 2.3, Interpolation::Linear),
         Key::new(256., 100.0, Interpolation::Linear),
-    ]))
+    ])
 });
 
-static SPLINE_CONTINENTALNESS: Lazy<RwLock<Spline<f32, f32>>> = Lazy::new(|| {
-    RwLock::new(Spline::from_vec(vec![
+static SPLINE_CONTINENTALNESS: Lazy<Spline<f32, f32>> = Lazy::new(|| {
+    Spline::from_vec(vec![
         Key::new(0.0, 43.0, Interpolation::Linear),
         Key::new(0.3, 61.0, Interpolation::Linear),
         Key::new(0.4, 62.0, Interpolation::Linear),
@@ -38,28 +38,28 @@ static SPLINE_CONTINENTALNESS: Lazy<RwLock<Spline<f32, f32>>> = Lazy::new(|| {
         Key::new(0.6, 110.0, Interpolation::Linear),
         Key::new(0.7, 120.0, Interpolation::Linear),
         Key::new(1.0, 170.0, Interpolation::Linear),
-    ]))
+    ])
 });
 
-static SPLINE_PEAKS: Lazy<RwLock<Spline<f32, f32>>> = Lazy::new(|| {
-    RwLock::new(Spline::from_vec(vec![
+static SPLINE_PEAKS: Lazy<Spline<f32, f32>> = Lazy::new(|| {
+    Spline::from_vec(vec![
         Key::new(0.0, 0.0, Interpolation::Linear),
         Key::new(0.3, 0.0, Interpolation::Linear),
         Key::new(0.6, 1.5, Interpolation::Linear),
         Key::new(0.7, 2.0, Interpolation::Linear),
         Key::new(0.85, 6.0, Interpolation::Linear),
         Key::new(1.0, 7.0, Interpolation::Linear)
-    ]))
+    ])
 });
 
-static SPLINE_FLATNESS: Lazy<RwLock<Spline<f32, f32>>> = Lazy::new(|| {
-    RwLock::new(Spline::from_vec(vec![
+static SPLINE_FLATNESS: Lazy<Spline<f32, f32>> = Lazy::new(|| {
+    Spline::from_vec(vec![
         Key::new(0.0, 0.0, Interpolation::Linear),
         Key::new(0.3, 0.05, Interpolation::Linear),
         Key::new(0.6, 0.01, Interpolation::Linear),
         Key::new(0.7, 0.9, Interpolation::Linear),
         Key::new(1.0, 1.0, Interpolation::Linear),
-    ]))
+    ])
 });
 
 pub fn perlin_octaved_3d(perlin: Perlin, x: i32, y: i32, z: i32, octaves: i32, mut amp: f32, mut freq: f32, persistence_a: f32, persistence_f: f32, zoom: f32) -> f32 {
@@ -110,14 +110,14 @@ pub fn get_modifiers(noisegen: Perlin, x: i32, z: i32) -> [f32; 3] {
 
 pub fn is_cave(noisegen: Perlin, x: i32, y: i32, z: i32) -> bool {
     (1. - perlin_octaved_3d(noisegen, x, y, z, 1, 1.3, 1.4, 0.5, 0.5, 35.).abs()) 
-        * SPLINE_WORM.read().unwrap().sample(y as f32).expect(&format!("y is {}", y)) <= 0.5 
+        * SPLINE_WORM.sample(y as f32).expect(&format!("y is {}", y)) <= 0.5 
     //|| !get_density_for_cave(noisegen, x, y, z)
 }
 
 pub fn get_density_for_cave(noisegen: Perlin, x: i32, y: i32, z: i32) -> bool {
     let p = perlin_octaved_3d(noisegen, x, y, z, 1, 1.1, 1.35, 0.6, 1.1, 1.) * 10.;
 
-    p * SPLINE_CAVE_Y_MOD.read().unwrap().sample(y as f32).unwrap() < 1.
+    p * SPLINE_CAVE_Y_MOD.sample(y as f32).unwrap() < 1.
 }
 
 pub fn generate_surface_height(noisegen: Perlin, x: i32, z: i32) -> i32 {
@@ -125,9 +125,9 @@ pub fn generate_surface_height(noisegen: Perlin, x: i32, z: i32) -> i32 {
     let [c, f, p] = get_modifiers(noisegen, x, z);
 
     let [cz, fz, pz] = [
-        SPLINE_CONTINENTALNESS.read().unwrap().sample(c).unwrap(),
-        SPLINE_FLATNESS.read().unwrap().sample(f).unwrap(),
-        SPLINE_PEAKS.read().unwrap().sample(p).unwrap()
+        SPLINE_CONTINENTALNESS.sample(c).unwrap(),
+        SPLINE_FLATNESS.sample(f).unwrap(),
+        SPLINE_PEAKS.sample(p).unwrap()
     ];
 
     let mut height = cz;

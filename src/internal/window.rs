@@ -130,7 +130,7 @@ impl<'a> GameWindow<'a> {
             label: Some("Primary Encoder")
         });
 
-        self.renderer.render_objects(&self.device, &self.queue, &mut output, &view, &mut encoder, &workspace.current_camera.bindgroup, &workspace);
+        self.renderer.render_surface(&self.device, &self.queue, &mut output, &view, &mut encoder, &workspace.current_camera.bindgroup, &workspace);
 
         let screen_descriptor = ScreenDescriptor {
             size_in_pixels: [self.window_size.width, self.window_size.height],

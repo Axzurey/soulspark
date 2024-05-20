@@ -38,7 +38,7 @@ async fn main() {
         window.clone()
     );
 
-    workspace.chunk_manager.generate_chunks();
+    workspace.chunk_manager.generate_chunks(&gamewindow.device);
     workspace.chunk_manager.mesh_chunks(&gamewindow.device);
 
     {

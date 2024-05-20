@@ -1,12 +1,13 @@
-use std::sync::{Arc, RwLock};
+use std::{mem, sync::{Arc, RwLock}};
 
 use cached::proc_macro::cached;
 use cgmath::{Vector2, Vector3};
 use noise::Perlin;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use stopwatch::Stopwatch;
+use wgpu::util::DeviceExt;
 
-use crate::blocks::{airblock::AirBlock, block::{Block, BlockType}, dirtblock::DirtBlock, grassblock::GrassBlock};
+use crate::{blocks::{airblock::AirBlock, block::{Block, BlockType}, dirtblock::DirtBlock, grassblock::GrassBlock, stoneblock::StoneBlock}, engine::vertex::{ModelVertex, Vertex}};
 
 use super::worldgen::generate_surface_height;
 
@@ -23,19 +24,44 @@ pub fn xz_to_index(x: i32, z: i32) -> u32 {
     (0.5 * (x0 + z0) as f32 * (x0 + z0 + 1) as f32 + z0 as f32) as u32 //cantor pairing https://math.stackexchange.com/questions/3003672/convert-infinite-2d-plane-integer-coords-to-1d-number
 }
 
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ChunkDataVertex {
+    pub position_sliced: [i32; 3]
+}
+
+impl Vertex for ChunkDataVertex {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<ChunkDataVertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 2,
+                    format: wgpu::VertexFormat::Sint32x3,
+                },
+            ],
+        }
+    }
+}
+
 pub struct Chunk {
     pub position: Vector2<i32>,
     grid: Vec<Vec<BlockType>>,
     
     //(vertex, index, len_indices)
     solid_buffers: Vec<(wgpu::Buffer, wgpu::Buffer, u32)>,
+    pub slice_vertex_buffers: Vec<wgpu::Buffer> 
 }
 
 impl Chunk {
-    pub fn new(position: Vector2<i32>, noisegen: Perlin) -> Self {
+    pub fn new(device: &wgpu::Device, position: Vector2<i32>, noisegen: Perlin) -> Self {
         let t = Stopwatch::start_new();
 
         let iter_layers = (0..16).into_iter();
+
+        let blocks: Vec<Vec<BlockType>> = Vec::new();
 
         let blocks = iter_layers.map(|y_slice| {
             let mut out: Vec<BlockType> = Vec::with_capacity(4096);
@@ -52,22 +78,37 @@ impl Chunk {
                         let abs_y = (y + y_slice as u32 * 16) as i32;
 
                         let block: BlockType =
-                        if abs_y == floor_level {
+                        if abs_y == floor_level && abs_y < 100 {
                             Box::new(GrassBlock::new(
                                 Vector3::new(x, y as u32, z), 
-                                Vector3::new(abs_x, abs_y, abs_z)))
-                            
+                                Vector3::new(abs_x, abs_y, abs_z))
+                            )
+                        }
+                        else if abs_y + 3 < floor_level || (abs_y == floor_level && abs_y >= 100) {
+                            Box::new(StoneBlock::new(
+                                Vector3::new(x, y as u32, z), 
+                                Vector3::new(abs_x, abs_y, abs_z))
+                            )
                         }
                         else if abs_y < floor_level {
-                            Box::new(DirtBlock::new(
-                                Vector3::new(x, y as u32, z), 
-                                Vector3::new(abs_x, abs_y, abs_z)))
-                            
+                            if abs_y < 100 {
+                                Box::new(DirtBlock::new(
+                                    Vector3::new(x, y as u32, z), 
+                                    Vector3::new(abs_x, abs_y, abs_z))
+                                )
+                            }
+                            else {
+                                Box::new(StoneBlock::new(
+                                    Vector3::new(x, y as u32, z), 
+                                    Vector3::new(abs_x, abs_y, abs_z))
+                                )
+                            }
                         }
                         else {
                             Box::new(AirBlock::new(
                                 Vector3::new(x, y as u32, z), 
-                                Vector3::new(abs_x, abs_y, abs_z)))
+                                Vector3::new(abs_x, abs_y, abs_z))
+                            )
                         };
 
                         uninit[local_xyz_to_index(x, y as u32, z) as usize].write(block);
@@ -80,12 +121,23 @@ impl Chunk {
             out
         }).collect::<Vec<Vec<BlockType>>>();
 
+        let slice_vertex_buffers = (0..16).map(|y| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&format!("Chunk Data Buffer")),
+                contents: bytemuck::cast_slice(&[ChunkDataVertex {
+                    position_sliced: [position.x, y, position.y]
+                }]),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
+        }).collect::<Vec<wgpu::Buffer>>();
+
         println!("Took {}ms to generate chunk", t.elapsed_ms());
 
         Self {
             position,
             grid: blocks,
-            solid_buffers: Vec::new()
+            solid_buffers: Vec::new(),
+            slice_vertex_buffers
         }
     }
 
