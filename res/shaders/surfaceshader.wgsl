@@ -120,5 +120,7 @@ var<uniform> camera: Camera;
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let diffuse_color = textureSampleLevel(diffuse_texture_array[in.diffuse_texture_index], diffuse_sampler_array[in.diffuse_texture_index], in.tex_coords, 0.0).rgba;
 
-    return vec4(diffuse_color.rgb, 1);
+    let sunlight = f32(extractBits(in.illumination, 24u, 4u));
+
+    return vec4(diffuse_color.rgb * sunlight * 1.0, 1);
 }

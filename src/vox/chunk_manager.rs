@@ -38,7 +38,7 @@ impl ChunkManager {
     pub fn new() -> Self {
         Self {
             chunks: HashMap::new(),
-            render_distance: 15,
+            render_distance: 10,
             seed: 52352,
             noise_gen: Perlin::new(rand::rngs::StdRng::seed_from_u64(52352).next_u32())
         }
@@ -197,19 +197,18 @@ impl ChunkManager {
     }
 
     pub fn flood_lights(&mut self, chunk_index: u32) {
-
         for x in 0..16 {
             for z in 0..16 {
-                for y in 255..=0 {
+                for y in (0..256).rev() {
                     //guaranteed to exist.
+
                     let block = self.get_block_at_absolute(x, y, z).unwrap();
 
                     //if it is the first solid block hit...
                     if !block.has_partial_transparency() {
                         let chunk = self.chunks.get_mut(&chunk_index).unwrap();
                         //start spreading light downwards...
-                        for sy in y..(y - 15) {
-
+                        for sy in (y - 15)..y {
                             chunk.modify_block_at(x as u32, sy as u32, z as u32, |block| {
                                 block.set_sunlight_intensity((y - sy) as u8);
                             });
