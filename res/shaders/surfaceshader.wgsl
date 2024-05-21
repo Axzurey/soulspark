@@ -5,10 +5,11 @@
 struct VertexInput {
     @location(0) d0: u32,
     @location(1) d1: u32,
+    @location(2) illumination: u32
 }
 
 struct ChunkData {
-    @location(2) position_sliced: vec3<i32>,
+    @location(3) position_sliced: vec3<i32>,
 }
 
 const tex_coords: array<vec2<f32>, 4> = array(
@@ -66,6 +67,7 @@ fn vs_main(vertex: VertexInput, chunk_data: ChunkData) -> VertexOutput {
     out.diffuse_texture_index = diffuse_texure_index;
     out.normal_texture_index = normal_texure_index;
     out.emissive_texture_index = emissive_texure_index;
+    out.illumination = vertex.illumination;
     out.clip_position = camera.view_proj * 
     vec4<f32>(
         f32(chunk_data.position_sliced.x * 16 + x), 
@@ -84,6 +86,7 @@ struct VertexOutput {
     @location(4) diffuse_texture_index: u32,
     @location(5) normal_texture_index: u32,
     @location(6) emissive_texture_index: u32,
+    @location(7) illumination: u32
 };
 
 @group(0) @binding(0)

@@ -18,7 +18,9 @@ impl DirtBlock {
     ) -> Self {
         Self {
             relative_position,
-            absolute_position
+            absolute_position,
+            lights: [0, 0, 0],
+            sunlight_intensity: 0
         }
     }
 }
@@ -50,5 +52,25 @@ impl Block for DirtBlock {
 
     fn get_surface_textures(&self, face: super::block::BlockFace) -> (usize, usize, usize) {
         (get_indices_from_texture("dirt"), 0, 0)
+    }
+    fn reset_light(&mut self) {
+        self.lights = [0, 0, 0];
+        self.sunlight_intensity = 0;
+    }
+    
+    fn set_sunlight_intensity(&mut self, intensity: u8) {
+        self.sunlight_intensity = intensity;
+    }
+    
+    fn set_light(&mut self, with_color: [u8; 3]) {
+        self.lights = with_color;
+    }
+    
+    fn get_light(&self) -> &[u8; 3] {
+        &self.lights
+    }
+    
+    fn get_sunlight_intensity(&self) -> u8 {
+        self.sunlight_intensity
     }
 }

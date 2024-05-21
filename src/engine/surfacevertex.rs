@@ -12,10 +12,11 @@ use super::vertex::Vertex;
 pub struct SurfaceVertex {
     pub d0: u32,
     pub d1: u32,
+    pub illumination: u32
 }
 
 impl SurfaceVertex {
-    pub fn from_position(pos: [u32; 3], face: BlockFace, nth: u32, texture_indices: (usize, usize, usize)) -> SurfaceVertex {
+    pub fn from_position(pos: [u32; 3], face: BlockFace, nth: u32, texture_indices: (usize, usize, usize), illumination: u32) -> SurfaceVertex {
         let face_dir = match face {
             BlockFace::Top => 0,
             BlockFace::Bottom => 1,
@@ -39,7 +40,7 @@ impl SurfaceVertex {
         d1.bitor_assign((texture_indices.2 as u32) << 16);
     
         SurfaceVertex {
-            d0, d1
+            d0, d1, illumination
         }
     }
 }
@@ -58,6 +59,11 @@ impl Vertex for SurfaceVertex {
                 wgpu::VertexAttribute {
                     offset: mem::size_of::<[u32; 1]>() as wgpu::BufferAddress,
                     shader_location: 1,
+                    format: wgpu::VertexFormat::Uint32,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[u32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 2,
                     format: wgpu::VertexFormat::Uint32,
                 },
             ]

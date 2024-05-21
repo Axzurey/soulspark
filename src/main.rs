@@ -39,6 +39,7 @@ async fn main() {
     );
 
     workspace.chunk_manager.generate_chunks(&gamewindow.device);
+    workspace.chunk_manager.generate_chunk_illumination();
     workspace.chunk_manager.mesh_chunks(&gamewindow.device);
 
     {

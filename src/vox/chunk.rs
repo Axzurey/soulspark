@@ -38,7 +38,7 @@ impl Vertex for ChunkDataVertex {
             attributes: &[
                 wgpu::VertexAttribute {
                     offset: 0,
-                    shader_location: 2,
+                    shader_location: 3,
                     format: wgpu::VertexFormat::Sint32x3,
                 },
             ],
@@ -156,5 +156,9 @@ impl Chunk {
     }
     pub fn get_solid_buffers(&self) -> &Vec<(wgpu::Buffer, wgpu::Buffer, u32)> {
         &self.solid_buffers
+    }
+
+    pub fn modify_block_at<F>(&mut self, x: u32, y: u32, z: u32, mut callback: F) where F: FnMut(&mut BlockType) {
+        callback(&mut self.grid[(y / 16) as usize][local_xyz_to_index(x % 16, y % 16, z % 16) as usize]);
     }
 }
