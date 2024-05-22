@@ -122,5 +122,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
 
     let sunlight = f32(extractBits(in.illumination, 24u, 4u));
 
-    return vec4(diffuse_color.rgb * sunlight * 1.0, 1);
+    let sunlight_factor = 0.1 + 0.9 * sunlight / 15.0;
+
+    return vec4(diffuse_color.rgb * sunlight_factor * 1.0, 1);
 }

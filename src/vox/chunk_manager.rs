@@ -197,20 +197,20 @@ impl ChunkManager {
     }
 
     pub fn flood_lights(&mut self, chunk_index: u32) {
+        let chunk = self.chunks.get_mut(&chunk_index).unwrap();
         for x in 0..16 {
             for z in 0..16 {
                 for y in (0..256).rev() {
                     //guaranteed to exist.
 
-                    let block = self.get_block_at_absolute(x, y, z).unwrap();
+                    let block = chunk.get_block_at(x, y, z);
 
                     //if it is the first solid block hit...
                     if !block.has_partial_transparency() {
-                        let chunk = self.chunks.get_mut(&chunk_index).unwrap();
                         //start spreading light downwards...
-                        for sy in (y - 15)..y {
+                        for sy in (y - 15)..=y {
                             chunk.modify_block_at(x as u32, sy as u32, z as u32, |block| {
-                                block.set_sunlight_intensity((y - sy) as u8);
+                                block.set_sunlight_intensity((15 - (y - sy)) as u8);
                             });
                         }
                         break;
