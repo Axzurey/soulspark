@@ -52,30 +52,33 @@ async fn main() {
     workspace.input_service.on_mouse_click.connect(|(btn, _)| Box::pin(async {
         println!("Hello World!");
     }));
-
-    workspace.input_service.on_key_pressed.connect(move |(_code, _)| {
-        let code = _code.clone();
-
-        Box::pin(async move {
-            let mut lock = clonedis.write().unwrap();
-            if code == KeyCode::KeyX {
-                match lock.get_mouse_lock_state() {
-                    MouseLockState::Free => {
-                        lock.set_mouse_lock_state(MouseLockState::LockCenter);
-                        lock.set_mouse_visible(false);
-                    },
-                    MouseLockState::Contained => {
-                        lock.set_mouse_lock_state(MouseLockState::LockCenter);
-                        lock.set_mouse_visible(false);
-                    },
-                    MouseLockState::LockCenter => {
-                        lock.set_mouse_lock_state(MouseLockState::Contained);
-                        lock.set_mouse_visible(true);
-                    },
+    
+    {
+        let _wa = workspace_arc.clone();
+        workspace.input_service.on_key_pressed.connect(move |(_code, _)| {
+            let code = _code.clone();
+            let wa = _wa.clone();
+            Box::pin(async move {
+                let mut lock = wa.write().unwrap().input_service;
+                if code == KeyCode::KeyX {
+                    match lock.get_mouse_lock_state() {
+                        MouseLockState::Free => {
+                            lock.set_mouse_lock_state(MouseLockState::LockCenter);
+                            lock.set_mouse_visible(false);
+                        },
+                        MouseLockState::Contained => {
+                            lock.set_mouse_lock_state(MouseLockState::LockCenter);
+                            lock.set_mouse_visible(false);
+                        },
+                        MouseLockState::LockCenter => {
+                            lock.set_mouse_lock_state(MouseLockState::Contained);
+                            lock.set_mouse_visible(true);
+                        },
+                    }
                 }
-            }
-        })
-    });
+            })
+        });
+    }
 
     {
         let light = gamewindow.renderer.create_spotlight(
@@ -117,23 +120,23 @@ async fn main() {
                 window_id,
             } => {
                 if window_id == window.id() {
-
+                    let ws = workspace_arc.write().unwrap();
                     let consumed = gamewindow.gui_renderer.handle_input(gamewindow.window.clone(), event);
-                    let mut is = input_service.write().unwrap();
+                    
                     match event {
                         WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
                             match event.physical_key {
                                 PhysicalKey::Code(v) => {
                                     if !consumed {
-                                        workspace.current_camera.controller.process_keyboard_input(v, event.state);
+                                        ws.current_camera.controller.process_keyboard_input(v, event.state);
                                     }
                                 },
                                 _ => {}
                             }
-                            is.process_key_input(event, consumed).block_on();
+                            ws.input_service.process_key_input(event, consumed).block_on();
                         },
                         WindowEvent::MouseInput { device_id, state, button } => {
-                            is.process_mouse_input(button, state, consumed).block_on();
+                            ws.input_service.process_mouse_input(button, state, consumed).block_on();
                         },
                         WindowEvent::CloseRequested => {
                             control_flow.exit()
@@ -147,7 +150,7 @@ async fn main() {
                                 let dt = now - last_update;
                                 last_update = now;
                                 gamewindow.on_next_frame(&mut workspace, dt.as_secs_f32());
-                                is.update();
+                                ws.input_service.update();
                             }
                         }
                         _ => {}

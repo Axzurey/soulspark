@@ -1,7 +1,7 @@
 use std::{cell::RefCell, future::Future, pin::Pin, rc::Rc};
 
 pub struct MonoThreadConnection<T> {
-    pub callback: Box<dyn FnMut(&T) -> ()>,
+    pub callback: Box<dyn FnMut(&T) -> Pin<Box<dyn Future<Output = ()> + Send>>>,
     pub once: bool,
     pub disconnected: bool
 }
@@ -19,7 +19,7 @@ pub struct MonoThreadSignal<T> {
     connections: Vec<Rc<RefCell<MonoThreadConnection<T>>>>
 }
 
-impl<T: Send + Sync> MonoThreadSignal<T> {
+impl<T> MonoThreadSignal<T> {
     pub fn new() -> Self {
         Self {
             connections: Vec::new()
@@ -45,8 +45,7 @@ impl<T: Send + Sync> MonoThreadSignal<T> {
 
     pub async fn dispatch(&mut self, value: T) {
         for connection in &mut self.connections {
-            let callback = connection.as_ref().borrow_mut().callback;
-            tokio::task::spawn(callback(&value));
+            tokio::task::spawn(((*connection.as_ref().borrow_mut()).callback)(&value));
         }
     }
     /// get a connection to an event that may happen in the future and may or may not run on a separate thread
@@ -58,7 +57,7 @@ impl<T: Send + Sync> MonoThreadSignal<T> {
     ///    println!("Hello World!");
     /// }));
     /// ```
-    pub fn connect<R>(&mut self, callback: R) -> Rc<RefCell<MonoThreadConnection<T>>> where R: FnMut(&T) {
+    pub fn connect<R>(&mut self, callback: R) -> Rc<RefCell<MonoThreadConnection<T>>> where R: FnMut(&T) -> Pin<Box<dyn Future<Output = ()> + Send>> + 'static {
         let c = Rc::new(RefCell::new(MonoThreadConnection {
             callback: Box::new(callback),
             once: false,
