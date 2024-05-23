@@ -85,4 +85,7 @@ impl Block for GrassBlock {
     fn get_sunlight_intensity(&self) -> u8 {
         self.sunlight_intensity
     }
+    fn get_block(&self) -> super::block::Blocks {
+        super::block::Blocks::GRASS
+    }
 }

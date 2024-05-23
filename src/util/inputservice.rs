@@ -13,7 +13,7 @@ pub enum MouseLockState {
     LockCenter 
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq)]
 enum InputActionQueue {
     MouseVisible(bool),
     MouseLockState(MouseLockState)

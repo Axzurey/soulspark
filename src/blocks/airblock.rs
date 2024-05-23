@@ -1,6 +1,6 @@
 use cgmath::Vector3;
 
-use super::block::Block;
+use super::block::{Block, Blocks};
 
 pub struct AirBlock {
     relative_position: Vector3<u32>,
@@ -41,7 +41,7 @@ impl Block for AirBlock {
     }
 
     fn get_name(&self) -> String {
-        "dirt block".to_owned()
+        "air block".to_owned()
     }
 
     fn is_fluid(&self) -> bool {
@@ -71,5 +71,8 @@ impl Block for AirBlock {
     
     fn get_sunlight_intensity(&self) -> u8 {
         self.sunlight_intensity
+    }
+    fn get_block(&self) -> super::block::Blocks {
+        super::block::Blocks::AIR
     }
 }

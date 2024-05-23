@@ -6,6 +6,7 @@ use gen::primitive::PrimitiveBuilder;
 use gui::elements::slider::Slider;
 use gui::elements::table::Table;
 use gui::elements::textbutton::TextButton;
+use internal::raycaster::raycast_blocks;
 use internal::window::GameWindow;
 use pollster::FutureExt;
 use state::workspace::Workspace;
@@ -49,34 +50,52 @@ async fn main() {
     workspace.chunk_manager.generate_chunk_illumination();
     workspace.chunk_manager.mesh_chunks(&gamewindow.device);
 
-    workspace.input_service.on_mouse_click.connect(|(btn, _)| Box::pin(async {
-        println!("Hello World!");
-    }));
+    {
+        let wa = workspace_arc.clone();
+
+        workspace.input_service.on_mouse_click.connect(move |(btn, _)| {
+            println!("Hello world!");
+            let lock = &mut wa.write().unwrap();
+
+            let p = lock.current_camera.position;
+
+            let pos = Vector3::new(p.x, p.y, p.z);
+            
+            let res = raycast_blocks(pos, lock.current_camera.look_vector(), 400.0, &lock.chunk_manager, |_| false);
+        
+            match res {
+                Some(hit) => {
+                    println!("{:?}", hit.hit.get_name());
+                },
+                None => {
+                    println!("Nothing");
+                }
+            }
+            //println doesn't flush in another thread...
+        });
+    }
     
     {
-        let _wa = workspace_arc.clone();
-        workspace.input_service.on_key_pressed.connect(move |(_code, _)| {
-            let code = _code.clone();
-            let wa = _wa.clone();
-            Box::pin(async move {
-                let mut lock = wa.write().unwrap().input_service;
-                if code == KeyCode::KeyX {
-                    match lock.get_mouse_lock_state() {
-                        MouseLockState::Free => {
-                            lock.set_mouse_lock_state(MouseLockState::LockCenter);
-                            lock.set_mouse_visible(false);
-                        },
-                        MouseLockState::Contained => {
-                            lock.set_mouse_lock_state(MouseLockState::LockCenter);
-                            lock.set_mouse_visible(false);
-                        },
-                        MouseLockState::LockCenter => {
-                            lock.set_mouse_lock_state(MouseLockState::Contained);
-                            lock.set_mouse_visible(true);
-                        },
-                    }
+        let wa = workspace_arc.clone();
+        workspace.input_service.on_key_pressed.connect(move |(code, _)| {
+            
+            let lock = &mut wa.write().unwrap().input_service;
+            if code == KeyCode::KeyX {
+                match lock.get_mouse_lock_state() {
+                    MouseLockState::Free => {
+                        lock.set_mouse_lock_state(MouseLockState::LockCenter);
+                        lock.set_mouse_visible(false);
+                    },
+                    MouseLockState::Contained => {
+                        lock.set_mouse_lock_state(MouseLockState::LockCenter);
+                        lock.set_mouse_visible(false);
+                    },
+                    MouseLockState::LockCenter => {
+                        lock.set_mouse_lock_state(MouseLockState::Contained);
+                        lock.set_mouse_visible(true);
+                    },
                 }
-            })
+            }
         });
     }
 
@@ -87,17 +106,15 @@ async fn main() {
         );
     }
 
-    let test_map: HashMap<String, String> = HashMap::new();
-
     let test_table = Table::new("test-table".to_string(), "hello!".to_string());
 
     {gamewindow.screenui.write().unwrap().add_child(test_table);}
 
     let textbutton = TextButton::new("button!".to_owned(), "Hello Me!".to_owned());
 
-    textbutton.write().unwrap().on_click.connect(|v| Box::pin(async {
+    textbutton.write().unwrap().on_click.connect(|v| {
         println!("HELLO");
-    }));
+    });
 
     let slider = Slider::new("SLIDERRR".to_owned());
 
@@ -120,7 +137,6 @@ async fn main() {
                 window_id,
             } => {
                 if window_id == window.id() {
-                    let ws = workspace_arc.write().unwrap();
                     let consumed = gamewindow.gui_renderer.handle_input(gamewindow.window.clone(), event);
                     
                     match event {
@@ -128,15 +144,15 @@ async fn main() {
                             match event.physical_key {
                                 PhysicalKey::Code(v) => {
                                     if !consumed {
-                                        ws.current_camera.controller.process_keyboard_input(v, event.state);
+                                        workspace.current_camera.controller.process_keyboard_input(v, event.state);
                                     }
                                 },
                                 _ => {}
                             }
-                            ws.input_service.process_key_input(event, consumed).block_on();
+                            workspace.input_service.process_key_input(event, consumed).block_on();
                         },
                         WindowEvent::MouseInput { device_id, state, button } => {
-                            ws.input_service.process_mouse_input(button, state, consumed).block_on();
+                            workspace.input_service.process_mouse_input(button, state, consumed).block_on();
                         },
                         WindowEvent::CloseRequested => {
                             control_flow.exit()
@@ -150,7 +166,7 @@ async fn main() {
                                 let dt = now - last_update;
                                 last_update = now;
                                 gamewindow.on_next_frame(&mut workspace, dt.as_secs_f32());
-                                ws.input_service.update();
+                                workspace.input_service.update();
                             }
                         }
                         _ => {}

@@ -4,6 +4,14 @@ use std::ops::BitOrAssign;
 
 pub type BlockType = Box<dyn Block + Send + Sync>;
 
+#[derive(PartialEq, Eq)]
+pub enum Blocks {
+    AIR,
+    DIRT,
+    GRASS,
+    STONE
+}
+
 pub enum BlockFace {
     Top = 0,
     Bottom = 1,
@@ -57,6 +65,8 @@ pub trait Block {
     fn get_light(&self) -> &[u8; 3];
     fn get_sunlight_intensity(&self) -> u8;
     fn emissive_color(&self) -> Option<[u8; 3]> {None}
+
+    fn get_block(&self) -> Blocks;
 }
 
 impl Debug for dyn Block {
