@@ -32,7 +32,16 @@ impl TextLabel {
             hovered: false
         }))
     }
+    pub fn set_text(&mut self, t: String) {
+        self.text = t;
+    }
+    pub fn get_text(&mut self) -> String {
+        self.text.clone()
+    }
 }
+
+unsafe impl Sync for TextLabel {}
+unsafe impl Send for TextLabel {}
 
 impl GuiObject for RwLockWriteGuard<'_, TextLabel> {
     fn get_children(&self) -> &Vec<Arc<RwLock<dyn GuiObject>>> {
