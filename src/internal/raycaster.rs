@@ -4,7 +4,7 @@ use crate::{blocks::{airblock::AirBlock, block::{Block, Blocks}}, vox::chunk_man
 
 pub struct BlockRaycastResult<'a> {
     pub hit: &'a Box<dyn Block + Send + Sync>,
-    pub normal: Vector3<f32>,
+    pub normal: Vector3<i32>,
     pub position: Vector3<f32>
 }
 
@@ -67,9 +67,9 @@ pub fn raycast_blocks<I>(from: Vector3<f32>, direction: Vector3<f32>, distance: 
                             hit: b,
                             position: from + direction * traversed,
                             normal: Vector3::new(
-                                if stepped_index == 0 {-step_x as f32} else {0.},
-                                if stepped_index == 1 {-step_y as f32} else {0.},
-                                if stepped_index == 2 {-step_z as f32} else {0.},
+                                if stepped_index == 0 {-step_x} else {0},
+                                if stepped_index == 1 {-step_y} else {0},
+                                if stepped_index == 2 {-step_z} else {0},
                             )
                         });
                     }

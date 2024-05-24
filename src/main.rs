@@ -1,12 +1,14 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
+use blocks::stoneblock::StoneBlock;
 use cgmath::{Point3, Vector3};
 use gen::primitive::PrimitiveBuilder;
 use gui::elements::slider::Slider;
 use gui::elements::table::Table;
 use gui::elements::textbutton::TextButton;
 use gui::elements::textlabel::TextLabel;
+use gui::uistate::MouseButton;
 use internal::raycaster::raycast_blocks;
 use internal::window::GameWindow;
 use pollster::FutureExt;
@@ -75,7 +77,20 @@ async fn main() {
 
                     let abs = hit.hit.get_absolute_position();
 
-                    
+                    if btn == MouseButton::Left {
+                        lock.chunk_manager.action_queue.break_block(abs);
+                    }
+                    else if btn == MouseButton::Right {
+                        let normal = hit.normal;
+                        let target_block_pos = abs + normal;
+
+                        let target_block = Box::new(StoneBlock::new(
+                            Vector3::new(target_block_pos.x.rem_euclid(16) as u32, target_block_pos.y.rem_euclid(16) as u32, target_block_pos.z.rem_euclid(16) as u32),
+                            target_block_pos
+                        ));
+
+                        lock.chunk_manager.action_queue.place_block(target_block);
+                    }
                 },
                 None => {
                     cloned_label.write().unwrap().set_text("NOTHING HIT".to_owned());
@@ -181,6 +196,7 @@ async fn main() {
                                 let dt = now - last_update;
                                 last_update = now;
                                 gamewindow.on_next_frame(&mut workspace, dt.as_secs_f32());
+                                workspace.chunk_manager.on_frame_action(&gamewindow.device);
                                 workspace.input_service.update();
                             }
                         }

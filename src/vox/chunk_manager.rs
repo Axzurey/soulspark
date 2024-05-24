@@ -7,15 +7,16 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use stopwatch::Stopwatch;
 use wgpu::util::DeviceExt;
 
-use crate::{blocks::{airblock::AirBlock, block::{calculate_illumination_bytes, Block, BlockFace, BlockType}}, engine::surfacevertex::SurfaceVertex};
+use crate::{blocks::{airblock::AirBlock, block::{calculate_illumination_bytes, Block, BlockFace, BlockType}}, engine::surfacevertex::SurfaceVertex, vox::chunkactionqueue::ChunkAction};
 
-use super::chunk::{local_xyz_to_index, xz_to_index, Chunk};
+use super::{chunk::{local_xyz_to_index, xz_to_index, Chunk}, chunkactionqueue::ChunkActionQueue};
 
 pub struct ChunkManager {
     pub chunks: HashMap<u32, Chunk>,
     render_distance: u32,
     seed: u32,
-    noise_gen: Perlin
+    noise_gen: Perlin,
+    pub action_queue: ChunkActionQueue
 }
 
 pub fn get_block_at_absolute(x: i32, y: i32, z: i32, chunks: &HashMap<u32, Chunk>) -> Option<&BlockType> {
@@ -40,7 +41,26 @@ impl ChunkManager {
             chunks: HashMap::new(),
             render_distance: 10,
             seed: 52352,
-            noise_gen: Perlin::new(rand::rngs::StdRng::seed_from_u64(52352).next_u32())
+            noise_gen: Perlin::new(rand::rngs::StdRng::seed_from_u64(52352).next_u32()),
+            action_queue: ChunkActionQueue::new()
+        }
+    }
+
+    pub fn on_frame_action(&mut self, device: &wgpu::Device) {
+        const MAX_ACTIONS: u32 = 15;
+
+        for i in 0..MAX_ACTIONS {
+            let res = self.action_queue.get_next_action();
+            if res.is_none() {break;}
+
+            match res.unwrap() {
+                ChunkAction::BreakBlock(pos) => {
+                    self.break_block(device, pos.x, pos.y as u32, pos.z)
+                },
+                ChunkAction::PlaceBlock(block) => {
+                    self.place_block(device, block)
+                }
+            }
         }
     }
 
@@ -196,8 +216,8 @@ impl ChunkManager {
         Some(chunk.get_block_at(x as u32, y as u32, z as u32))
     }
 
-    pub fn remove_block(&mut self, device: &wgpu::Device, x: i32, y: u32, z: i32) {
-        let index = xz_to_index(x, z);
+    pub fn break_block(&mut self, device: &wgpu::Device, x: i32, y: u32, z: i32) {
+        let index = xz_to_index(x.div_euclid(16), z.div_euclid(16));
         let chunk = self.chunks.get_mut(&index).unwrap();
 
         let xrem = x.rem_euclid(16) as u32;
@@ -213,8 +233,81 @@ impl ChunkManager {
             )
         );
 
-        self.flood_lights(index);
-        self.mesh_chunk(device, index);
+        let xd = x.div_euclid(16);
+        let zd = z.div_euclid(16);
+        let yd = y.div_euclid(16);
+        //gets the adjacent chunks, including itself :)
+        let requires_meshing = (xd - 1..=xd + 1).map(|x| {
+            (zd - 1..=zd + 1).map(move |z| {
+                (yd - 1..=yd + 1).map(move |y| {
+                    (x, y, z)
+                })
+                
+            }).flatten()
+        }).flatten();
+
+        requires_meshing.for_each(|v| {
+            let index = xz_to_index(v.0, v.2);
+            let slice = v.1;
+
+            if slice >= 16 {return};
+
+            let chunk = self.chunks.get(&index);
+            if chunk.is_none() {return};
+
+            self.flood_lights(index);
+
+            let chunk = self.chunks.get(&index);
+            if chunk.is_none() {return};
+
+            self.mesh_slice(device, chunk.unwrap(), slice);
+        });
+    }
+
+    pub fn place_block(&mut self, device: &wgpu::Device, block: BlockType) {
+        let abs = block.get_absolute_position();
+
+        let index = xz_to_index(abs.x.div_euclid(16), abs.z.div_euclid(16));
+
+        let local = block.get_relative_position();
+
+        let chunk = self.chunks.get_mut(&index).unwrap();
+
+        chunk.grid[(abs.y / 16) as usize][local_xyz_to_index(local.x, local.y, local.z) as usize] = block;
+
+        let xd = abs.x.div_euclid(16);
+        let zd = abs.z.div_euclid(16);
+        let yd = abs.y.div_euclid(16);
+        //gets the adjacent chunks, including itself :)
+        let requires_meshing = (xd - 1..=xd + 1).map(|x| {
+            (zd - 1..=zd + 1).map(move |z| {
+                (yd - 1..=yd + 1).map(move |y| {
+                    (x, y, z)
+                })
+                
+            }).flatten()
+        }).flatten();
+
+        let t = Stopwatch::start_new();
+        requires_meshing.for_each(|v| {
+            let index = xz_to_index(v.0, v.2);
+            let slice = v.1;
+
+            if slice >= 16 {return};
+
+            let chunk = self.chunks.get(&index);
+            if chunk.is_none() {return};
+
+            self.flood_lights(index);
+
+            let chunk = self.chunks.get(&index).unwrap();
+
+            let buffers = self.mesh_slice(device, chunk, slice as u32);
+
+            let chunk = self.chunks.get_mut(&index).unwrap();
+            chunk.set_solid_buffer(slice as u32, buffers);
+        });
+        println!("regeneration took {}ms", t.elapsed_ms());
     }
 
     pub fn flood_lights(&mut self, chunk_index: u32) {
