@@ -48,7 +48,6 @@ impl<T> MonoThreadSignal<T> where T: Send + Clone + Sync + 'static {
             let copy = value.clone();
             let clonedfn = connection.clone();
             std::thread::spawn(move || {(clonedfn.read().unwrap().callback)(copy)});
-            //tokio::task::spawn(((*connection.as_ref().borrow_mut()).callback)(&value));
         }
     }
     /// get a connection to an event that may happen in the future that runs on a different thread

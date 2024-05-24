@@ -48,7 +48,7 @@ impl Vertex for ChunkDataVertex {
 
 pub struct Chunk {
     pub position: Vector2<i32>,
-    grid: Vec<Vec<BlockType>>,
+    pub grid: Vec<Vec<BlockType>>,
     
     //(vertex, index, len_indices)
     solid_buffers: Vec<(wgpu::Buffer, wgpu::Buffer, u32)>,

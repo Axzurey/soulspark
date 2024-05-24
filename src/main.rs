@@ -13,6 +13,7 @@ use pollster::FutureExt;
 use state::workspace::Workspace;
 use stopwatch::Stopwatch;
 use util::inputservice::{InputService, MouseLockState};
+use vox::chunk::xz_to_index;
 use winit::event::{DeviceEvent, Event, KeyEvent, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -51,7 +52,7 @@ async fn main() {
     workspace.chunk_manager.generate_chunk_illumination();
     workspace.chunk_manager.mesh_chunks(&gamewindow.device);
 
-    let text_label = TextLabel::new("h".to_owned(), "".to_owned());
+    let text_label = TextLabel::new("h".to_owned(), "hellotext".to_owned());
 
     {
         let wa = workspace_arc.clone();
@@ -69,8 +70,12 @@ async fn main() {
         
             match res {
                 Some(hit) => {
-                    println!("{:?}", hit.hit.get_name());
                     cloned_label.write().unwrap().set_text(hit.hit.get_name());
+                    println!("{:?}", hit.hit.get_name());
+
+                    let abs = hit.hit.get_absolute_position();
+
+                    
                 },
                 None => {
                     cloned_label.write().unwrap().set_text("NOTHING HIT".to_owned());
@@ -126,9 +131,11 @@ async fn main() {
 
     {gamewindow.screenui.write().unwrap().add_child(text_label);}
     //{gamewindow.screenui.write().unwrap().add_child(textbutton);}
-    {gamewindow.screenui.write().unwrap().add_child(slider);}
+    //{gamewindow.screenui.write().unwrap().add_child(slider);}
 
     let mut last_update = instant::Instant::now();
+
+    drop(workspace);
 
     let _ = event_loop.run(
         move |event, control_flow| 
@@ -137,6 +144,7 @@ async fn main() {
                 
             },
             Event::DeviceEvent {event: DeviceEvent::MouseMotion { delta }, device_id } => {
+                let mut workspace = workspace_arc.write().unwrap();
                 workspace.current_camera.controller.process_mouse_input(delta.0, delta.1);
             },
             Event::WindowEvent {
@@ -145,7 +153,7 @@ async fn main() {
             } => {
                 if window_id == window.id() {
                     let consumed = gamewindow.gui_renderer.handle_input(gamewindow.window.clone(), event);
-                    
+                    let mut workspace = workspace_arc.write().unwrap();
                     match event {
                         WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
                             match event.physical_key {

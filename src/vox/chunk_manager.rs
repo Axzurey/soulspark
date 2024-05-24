@@ -7,9 +7,9 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use stopwatch::Stopwatch;
 use wgpu::util::DeviceExt;
 
-use crate::{blocks::block::{calculate_illumination_bytes, Block, BlockFace, BlockType}, engine::surfacevertex::SurfaceVertex};
+use crate::{blocks::{airblock::AirBlock, block::{calculate_illumination_bytes, Block, BlockFace, BlockType}}, engine::surfacevertex::SurfaceVertex};
 
-use super::chunk::{xz_to_index, Chunk};
+use super::chunk::{local_xyz_to_index, xz_to_index, Chunk};
 
 pub struct ChunkManager {
     pub chunks: HashMap<u32, Chunk>,
@@ -194,6 +194,27 @@ impl ChunkManager {
         let chunk = self.chunks.get(&xz_to_index(chunk_x, chunk_z))?;
 
         Some(chunk.get_block_at(x as u32, y as u32, z as u32))
+    }
+
+    pub fn remove_block(&mut self, device: &wgpu::Device, x: i32, y: u32, z: i32) {
+        let index = xz_to_index(x, z);
+        let chunk = self.chunks.get_mut(&index).unwrap();
+
+        let xrem = x.rem_euclid(16) as u32;
+        let zrem = z.rem_euclid(16) as u32;
+        let yrem = y % 16;
+
+        //TODO: do removal formalities, such as dropping the block...
+
+        chunk.grid[(y / 16) as usize][local_xyz_to_index(xrem, yrem, zrem) as usize] = Box::new(
+            AirBlock::new(
+                Vector3::new(xrem, yrem, zrem), 
+                Vector3::new(x, y as i32, z)
+            )
+        );
+
+        self.flood_lights(index);
+        self.mesh_chunk(device, index);
     }
 
     pub fn flood_lights(&mut self, chunk_index: u32) {
