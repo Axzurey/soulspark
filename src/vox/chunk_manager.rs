@@ -246,6 +246,7 @@ impl ChunkManager {
             }).flatten()
         }).flatten();
 
+        let t = Stopwatch::start_new();
         requires_meshing.for_each(|v| {
             let index = xz_to_index(v.0, v.2);
             let slice = v.1;
@@ -257,11 +258,15 @@ impl ChunkManager {
 
             self.flood_lights(index);
 
-            let chunk = self.chunks.get(&index);
-            if chunk.is_none() {return};
-
-            self.mesh_slice(device, chunk.unwrap(), slice);
+            let chunk = self.chunks.get(&index).unwrap();
+            let t = Stopwatch::start_new();
+            let buffers = self.mesh_slice(device, chunk, slice as u32);
+            
+            let chunk = self.chunks.get_mut(&index).unwrap();
+            chunk.set_solid_buffer(slice as u32, buffers);
+            println!("{}ms for 1", t.elapsed_ms());
         });
+        println!("regeneration took {}ms", t.elapsed_ms());
     }
 
     pub fn place_block(&mut self, device: &wgpu::Device, block: BlockType) {
