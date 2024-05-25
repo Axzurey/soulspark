@@ -1,6 +1,6 @@
 use std::{collections::{HashMap, VecDeque}, sync::{Arc, RwLock}};
 
-use cgmath::{Vector2, Vector3};
+use cgmath::{InnerSpace, Vector2, Vector3};
 use noise::Perlin;
 use rand::{RngCore, SeedableRng};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -47,9 +47,8 @@ impl ChunkManager {
     }
 
     pub fn on_frame_action(&mut self, device: &wgpu::Device) {
-        const MAX_ACTIONS: u32 = 15;
-
-        for i in 0..MAX_ACTIONS {
+        const MAX_ACTIONS: u32 = 3; //pretty good number for most devices? probably?
+        for _ in 0..MAX_ACTIONS {
             let res = self.action_queue.get_next_action();
             if res.is_none() {break;}
 
@@ -59,6 +58,18 @@ impl ChunkManager {
                 },
                 ChunkAction::PlaceBlock(block) => {
                     self.place_block(device, block)
+                },
+                ChunkAction::UpdateChunkMesh(p) => {
+                    let ind = xz_to_index(p.x, p.z);
+                    let mesh = self.mesh_slice(device, self.chunks.get(&ind).unwrap(), p.y as u32);
+
+                    let chunk = self.chunks.get_mut(&ind).unwrap();
+                    
+                    chunk.set_solid_buffer(p.y as u32, mesh);
+                },
+                ChunkAction::UpdateChunkLighting(p) => {
+                    let ind = xz_to_index(p.x, p.y);
+                    self.flood_lights(ind);
                 }
             }
         }
@@ -100,90 +111,118 @@ impl ChunkManager {
     }
 
     pub fn mesh_slice(&self, device: &wgpu::Device, chunk: &Chunk, y_slice: u32) -> (wgpu::Buffer, wgpu::Buffer, u32) {
-        let mut vertices: Vec<SurfaceVertex> = Vec::new();
-        let mut indices: Vec<u32> = Vec::new();
+        let mut vertices: Vec<SurfaceVertex> = Vec::with_capacity(16 * 16 * 16 * 6 * 4);
+        let mut indices: Vec<u32> = Vec::with_capacity(16 * 16 * 16 * 6 * 6);
         let rel_abs_x = chunk.position.x * 16;
         let rel_abs_z = chunk.position.y * 16;
+        let y_start = y_slice * 16;
+        let y_end = (y_slice + 1) * 16;
 
         for x in 0..16 {
             for z in 0..16 {
-                for yt in y_slice * 16..(y_slice + 1) * 16 {
+                let abs_x = x as i32 + rel_abs_x;
+                let abs_z = z as i32 + rel_abs_z;
+
+                for yt in y_start..y_end {
                     let y = yt % 16;
                     let block_at = chunk.get_block_at(x, yt, z);
 
-                    let current = block_at;
-
-                    if current.has_partial_transparency() || !current.does_mesh() {continue;};
-
-                    let front = get_block_at_absolute((x as i32) + rel_abs_x, yt as i32, (z as i32) + rel_abs_z + 1, &self.chunks);
-                    let back = get_block_at_absolute((x as i32) + rel_abs_x, yt as i32, (z as i32) + rel_abs_z - 1, &self.chunks);
-                    let up = get_block_at_absolute((x as i32) + rel_abs_x, (yt as i32) + 1, (z as i32) + rel_abs_z, &self.chunks);
-                    let down = get_block_at_absolute((x as i32) + rel_abs_x, (yt as i32) - 1, (z as i32) + rel_abs_z, &self.chunks);
-                    let right = get_block_at_absolute((x as i32) + rel_abs_x + 1, yt as i32, (z as i32) + rel_abs_z, &self.chunks);
-                    let left = get_block_at_absolute((x as i32) + rel_abs_x - 1, yt as i32, (z as i32) + rel_abs_z, &self.chunks);
+                    if block_at.has_partial_transparency() || !block_at.does_mesh() {
+                        continue;
+                    }
 
                     let illumination = calculate_illumination_bytes(block_at);
 
-                    if front.is_some() && front.unwrap().has_partial_transparency() {
-                        let current_l = vertices.len();
-                        push_n(&mut indices, current_l as u32, [0, 1, 2, 1, 3, 2]);
+                    let neighbors = [
+                        get_block_at_absolute(abs_x, yt as i32, abs_z + 1, &self.chunks),
+                        get_block_at_absolute(abs_x, yt as i32, abs_z - 1, &self.chunks),
+                        get_block_at_absolute(abs_x + 1, yt as i32, abs_z, &self.chunks),
+                        get_block_at_absolute(abs_x - 1, yt as i32, abs_z, &self.chunks),
+                        get_block_at_absolute(abs_x, yt as i32 + 1, abs_z, &self.chunks),
+                        get_block_at_absolute(abs_x, yt as i32 - 1, abs_z, &self.chunks),
+                    ];
 
-                        vertices.push(SurfaceVertex::from_position([x, y, z + 1], BlockFace::Front, 0, current.get_surface_textures(BlockFace::Front), illumination));
-                        vertices.push(SurfaceVertex::from_position([x + 1 , y , z + 1 ], BlockFace::Front, 1, current.get_surface_textures(BlockFace::Front), illumination));
-                        vertices.push(SurfaceVertex::from_position([x , y + 1 , z + 1 ], BlockFace::Front, 2, current.get_surface_textures(BlockFace::Front), illumination));
-                        vertices.push(SurfaceVertex::from_position([x + 1 , y + 1 , z + 1 ], BlockFace::Front, 3, current.get_surface_textures(BlockFace::Front), illumination));
+                    let faces = [
+                        BlockFace::Front,
+                        BlockFace::Back,
+                        BlockFace::Right,
+                        BlockFace::Left,
+                        BlockFace::Top,
+                        BlockFace::Bottom,
+                    ];
+
+                    for (i, neighbor) in neighbors.iter().enumerate() {
+                        if let Some(neighbor_block) = neighbor {
+                            if neighbor_block.has_partial_transparency() {
+                                let current_l = vertices.len() as u32;
+                                let face = faces[i];
+
+                                let (face_vertices, face_indices) = match face {
+                                    BlockFace::Front => (
+                                        [
+                                            [x, y, z + 1],
+                                            [x + 1, y, z + 1],
+                                            [x, y + 1, z + 1],
+                                            [x + 1, y + 1, z + 1],
+                                        ],
+                                        [0, 1, 2, 1, 3, 2],
+                                    ),
+                                    BlockFace::Back => (
+                                        [
+                                            [x, y, z],
+                                            [x + 1, y, z],
+                                            [x, y + 1, z],
+                                            [x + 1, y + 1, z],
+                                        ],
+                                        [2, 1, 0, 2, 3, 1],
+                                    ),
+                                    BlockFace::Right => (
+                                        [
+                                            [x + 1, y, z],
+                                            [x + 1, y, z + 1],
+                                            [x + 1, y + 1, z],
+                                            [x + 1, y + 1, z + 1],
+                                        ],
+                                        [2, 1, 0, 2, 3, 1],
+                                    ),
+                                    BlockFace::Left => (
+                                        [
+                                            [x, y, z],
+                                            [x, y, z + 1],
+                                            [x, y + 1, z],
+                                            [x, y + 1, z + 1],
+                                        ],
+                                        [0, 1, 2, 1, 3, 2],
+                                    ),
+                                    BlockFace::Top => (
+                                        [
+                                            [x, y + 1, z],
+                                            [x, y + 1, z + 1],
+                                            [x + 1, y + 1, z],
+                                            [x + 1, y + 1, z + 1],
+                                        ],
+                                        [0, 1, 2, 1, 3, 2],
+                                    ),
+                                    BlockFace::Bottom => (
+                                        [
+                                            [x, y, z],
+                                            [x, y, z + 1],
+                                            [x + 1, y, z],
+                                            [x + 1, y, z + 1],
+                                        ],
+                                        [2, 1, 0, 2, 3, 1],
+                                    ),
+                                };
+
+                                indices.extend(face_indices.iter().map(|&index| index + current_l));
+                                for (j, &pos) in face_vertices.iter().enumerate() {
+                                    vertices.push(SurfaceVertex::from_position(
+                                        pos, face, j as u32, block_at.get_surface_textures(face), illumination
+                                    ));
+                                }
+                            }
+                        }
                     }
-
-                    if back.is_some() && back.unwrap().has_partial_transparency() {
-                        let current_l = vertices.len();
-                        push_n(&mut indices, current_l as u32, [2, 1, 0, 2, 3, 1]);
-
-                        vertices.push(SurfaceVertex::from_position([x , y , z ], BlockFace::Back, 0, current.get_surface_textures(BlockFace::Back), illumination));
-                        vertices.push(SurfaceVertex::from_position([x + 1 , y , z ], BlockFace::Back, 1, current.get_surface_textures(BlockFace::Back), illumination));
-                        vertices.push(SurfaceVertex::from_position([x , y + 1 , z ], BlockFace::Back, 2, current.get_surface_textures(BlockFace::Back), illumination));
-                        vertices.push(SurfaceVertex::from_position([x + 1 , y + 1 , z ], BlockFace::Back, 3, current.get_surface_textures(BlockFace::Back), illumination));
-                    }
-
-                    if right.is_some() && right.unwrap().has_partial_transparency() {
-                        let current_l = vertices.len();
-                        push_n(&mut indices, current_l as u32, [2, 1, 0, 2, 3, 1]);
-
-                        vertices.push(SurfaceVertex::from_position([x + 1 , y , z ], BlockFace::Right, 0, current.get_surface_textures(BlockFace::Right), illumination));
-                        vertices.push(SurfaceVertex::from_position([x + 1 , y , z + 1 ], BlockFace::Right, 1, current.get_surface_textures(BlockFace::Right), illumination));
-                        vertices.push(SurfaceVertex::from_position([x + 1 , y + 1 , z ], BlockFace::Right, 2, current.get_surface_textures(BlockFace::Right), illumination));
-                        vertices.push(SurfaceVertex::from_position([x + 1 , y + 1 , z + 1 ], BlockFace::Right, 3, current.get_surface_textures(BlockFace::Right), illumination));
-                    }
-
-                    if left.is_some() && left.unwrap().has_partial_transparency() {
-                        let current_l = vertices.len();
-                        push_n(&mut indices, current_l as u32, [0, 1, 2, 1, 3, 2]);
-
-                        vertices.push(SurfaceVertex::from_position([x , y , z ], BlockFace::Left, 0, current.get_surface_textures(BlockFace::Left), illumination));
-                        vertices.push(SurfaceVertex::from_position([x , y , z + 1 ], BlockFace::Left, 1, current.get_surface_textures(BlockFace::Left), illumination));
-                        vertices.push(SurfaceVertex::from_position([x , y + 1 , z ], BlockFace::Left, 2, current.get_surface_textures(BlockFace::Left), illumination));
-                        vertices.push(SurfaceVertex::from_position([x , y + 1 , z + 1 ], BlockFace::Left, 3, current.get_surface_textures(BlockFace::Left), illumination));
-                    }
-
-                    if up.is_some() && up.unwrap().has_partial_transparency() {
-                        let current_l = vertices.len();
-                        push_n(&mut indices, current_l as u32, [0, 1, 2, 1, 3, 2]);
-
-                        vertices.push(SurfaceVertex::from_position([x , y + 1 , z ], BlockFace::Top, 0, current.get_surface_textures(BlockFace::Top), illumination));
-                        vertices.push(SurfaceVertex::from_position([x , y + 1 , z + 1 ], BlockFace::Top, 1, current.get_surface_textures(BlockFace::Top), illumination));
-                        vertices.push(SurfaceVertex::from_position([x + 1 , y + 1 , z ], BlockFace::Top, 2, current.get_surface_textures(BlockFace::Top), illumination));
-                        vertices.push(SurfaceVertex::from_position([x + 1 , y + 1 , z + 1 ], BlockFace::Top, 3, current.get_surface_textures(BlockFace::Top), illumination));
-                    }
-
-                    if down.is_some() && down.unwrap().has_partial_transparency() {
-                        let current_l = vertices.len();
-                        push_n(&mut indices, current_l as u32, [2, 1, 0, 2, 3, 1]);
-
-                        vertices.push(SurfaceVertex::from_position([x , y , z ], BlockFace::Bottom, 0, current.get_surface_textures(BlockFace::Bottom), illumination));
-                        vertices.push(SurfaceVertex::from_position([x , y , z + 1 ], BlockFace::Bottom, 1, current.get_surface_textures(BlockFace::Bottom), illumination));
-                        vertices.push(SurfaceVertex::from_position([x + 1 , y , z ], BlockFace::Bottom, 2, current.get_surface_textures(BlockFace::Bottom), illumination));
-                        vertices.push(SurfaceVertex::from_position([x + 1 , y , z + 1 ], BlockFace::Bottom, 3, current.get_surface_textures(BlockFace::Bottom), illumination));
-                    }
-
                 }
             }
         }
@@ -202,7 +241,6 @@ impl ChunkManager {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        //todo: find a faster and better way to mesh.
         (vertex_buffer, index_buffer, ilen)
     }
 
@@ -236,37 +274,43 @@ impl ChunkManager {
         let xd = x.div_euclid(16);
         let zd = z.div_euclid(16);
         let yd = y.div_euclid(16);
+
         //gets the adjacent chunks, including itself :)
-        let requires_meshing = (xd - 1..=xd + 1).map(|x| {
+        let mut requires_meshing = (xd - 1..=xd + 1).map(|x| {
             (zd - 1..=zd + 1).map(move |z| {
-                (yd - 1..=yd + 1).map(move |y| {
-                    (x, y, z)
+                (0..16).map(move |y| {
+                    Vector3::new(x as f32, y as f32, z as f32)
                 })
                 
             }).flatten()
+        }).flatten().collect::<Vec<Vector3<f32>>>();
+
+        let requires_meshing_light = (xd - 1..=xd + 1).map(|x| {
+            (zd - 1..=zd + 1).map(move |z| {
+                (x, z)
+            })
         }).flatten();
 
-        let t = Stopwatch::start_new();
-        requires_meshing.for_each(|v| {
-            let index = xz_to_index(v.0, v.2);
-            let slice = v.1;
-
-            if slice >= 16 {return};
+        requires_meshing_light.for_each(|v| {
+            let index = xz_to_index(v.0, v.1);
 
             let chunk = self.chunks.get(&index);
             if chunk.is_none() {return};
 
-            self.flood_lights(index);
-
-            let chunk = self.chunks.get(&index).unwrap();
-            let t = Stopwatch::start_new();
-            let buffers = self.mesh_slice(device, chunk, slice as u32);
-            
-            let chunk = self.chunks.get_mut(&index).unwrap();
-            chunk.set_solid_buffer(slice as u32, buffers);
-            println!("{}ms for 1", t.elapsed_ms());
+            self.action_queue.update_chunk_lighting(Vector2::new(v.0, v.1));
         });
-        println!("regeneration took {}ms", t.elapsed_ms());
+
+        let xyz: Vector3<f32> = Vector3::new(
+            if xrem == 0 {xd - 1} else if xrem == 15 {xd + 1} else {xd} as f32,
+            if yrem == 0 {yd - 1} else if yrem == 15 {yd + 1} else {yd} as f32,
+            if zrem == 0 {zd - 1} else if zrem == 15 {zd + 1} else {zd} as f32,
+        );
+
+        requires_meshing.sort_by(|a, b| (a - xyz).magnitude().partial_cmp(&(b - xyz).magnitude()).unwrap());
+
+        for v in requires_meshing {
+            self.action_queue.update_chunk_mesh(Vector3::new(v.x as i32, v.y as i32, v.z as i32));
+        }
     }
 
     pub fn place_block(&mut self, device: &wgpu::Device, block: BlockType) {
@@ -283,44 +327,60 @@ impl ChunkManager {
         let xd = abs.x.div_euclid(16);
         let zd = abs.z.div_euclid(16);
         let yd = abs.y.div_euclid(16);
+
         //gets the adjacent chunks, including itself :)
-        let requires_meshing = (xd - 1..=xd + 1).map(|x| {
+        let mut requires_meshing = (xd - 1..=xd + 1).map(|x| {
             (zd - 1..=zd + 1).map(move |z| {
-                (yd - 1..=yd + 1).map(move |y| {
-                    (x, y, z)
+                (0..16).map(move |y| {
+                    Vector3::new(x as f32, y as f32, z as f32)
                 })
                 
             }).flatten()
+        }).flatten().collect::<Vec<Vector3<f32>>>();
+
+        let requires_meshing_light = (xd - 1..=xd + 1).map(|x| {
+            (zd - 1..=zd + 1).map(move |z| {
+                (x, z)
+            })
         }).flatten();
 
-        let t = Stopwatch::start_new();
-        requires_meshing.for_each(|v| {
-            let index = xz_to_index(v.0, v.2);
-            let slice = v.1;
-
-            if slice >= 16 {return};
+        requires_meshing_light.for_each(|v| {
+            let index = xz_to_index(v.0, v.1);
 
             let chunk = self.chunks.get(&index);
             if chunk.is_none() {return};
 
-            self.flood_lights(index);
-
-            let chunk = self.chunks.get(&index).unwrap();
-
-            let buffers = self.mesh_slice(device, chunk, slice as u32);
-
-            let chunk = self.chunks.get_mut(&index).unwrap();
-            chunk.set_solid_buffer(slice as u32, buffers);
+            self.action_queue.update_chunk_lighting(Vector2::new(v.0, v.1));
         });
-        println!("regeneration took {}ms", t.elapsed_ms());
+
+        let xyz: Vector3<f32> = Vector3::new(
+            if local.x == 0 {xd - 1} else if local.x == 15 {xd + 1} else {xd} as f32,
+            if local.y == 0 {yd - 1} else if local.y == 15 {yd + 1} else {yd} as f32,
+            if local.z == 0 {zd - 1} else if local.z == 15 {zd + 1} else {zd} as f32,
+        );
+
+        requires_meshing.sort_by(|a, b| (a - xyz).magnitude().partial_cmp(&(b - xyz).magnitude()).unwrap());
+
+        for v in requires_meshing {
+            self.action_queue.update_chunk_mesh(Vector3::new(v.x as i32, v.y as i32, v.z as i32));
+        }
     }
 
     pub fn flood_lights(&mut self, chunk_index: u32) {
         let chunk = self.chunks.get_mut(&chunk_index).unwrap();
         for x in 0..16 {
             for z in 0..16 {
+                let mut initial_height = 1000; //safe value
                 for y in (0..256).rev() {
-                    //guaranteed to exist.
+                    if initial_height != 1000 && y < initial_height - 15 {
+                        chunk.modify_block_at(x as u32, y as u32, z as u32, |block| {
+                            block.set_sunlight_intensity(0);
+                        });
+                        continue;
+                    }
+                    else if initial_height != 1000 {
+                        continue;
+                    }
 
                     let block = chunk.get_block_at(x, y, z);
 
@@ -332,7 +392,7 @@ impl ChunkManager {
                                 block.set_sunlight_intensity((15 - (y - sy)) as u8);
                             });
                         }
-                        break;
+                        initial_height = y;
                     }
                 }
             }

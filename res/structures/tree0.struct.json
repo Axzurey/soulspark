@@ -1,0 +1,11 @@
+{
+    "blocks": [
+        "air", "log", "leaf"
+    ],
+    "width-x": 5,
+    "width-z": 5,
+    "height": 7,
+    "shematic": [
+
+    ]
+}

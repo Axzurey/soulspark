@@ -6,13 +6,13 @@
         "filter": "nearest"
     },
     {
-        "path": "textures/grass_side.png",
+        "path": "textures/log.png",
         "alias": "grass-side",
         "type": "diffuse",
         "filter": "nearest"
     },
     {
-        "path": "textures/grass_top.png",
+        "path": "textures/log_top.png",
         "alias": "grass-top",
         "type": "diffuse",
         "filter": "nearest"

@@ -4,7 +4,7 @@ use std::ops::BitOrAssign;
 
 pub type BlockType = Box<dyn Block + Send + Sync>;
 
-#[derive(PartialEq, Eq)]
+#[derive(PartialEq, Eq, Debug)]
 pub enum Blocks {
     AIR,
     DIRT,
@@ -12,6 +12,7 @@ pub enum Blocks {
     STONE
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
 pub enum BlockFace {
     Top = 0,
     Bottom = 1,
