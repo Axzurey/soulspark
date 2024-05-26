@@ -52,6 +52,7 @@ pub struct Chunk {
     
     //(vertex, index, len_indices)
     solid_buffers: Vec<(wgpu::Buffer, wgpu::Buffer, u32)>,
+    transparent_buffers: Vec<(wgpu::Buffer, wgpu::Buffer, u32)>,
     pub slice_vertex_buffers: Vec<wgpu::Buffer> 
 }
 
@@ -137,6 +138,7 @@ impl Chunk {
             position,
             grid: blocks,
             solid_buffers: Vec::new(),
+            transparent_buffers: Vec::new(),
             slice_vertex_buffers
         }
     }
@@ -156,6 +158,18 @@ impl Chunk {
     }
     pub fn get_solid_buffers(&self) -> &Vec<(wgpu::Buffer, wgpu::Buffer, u32)> {
         &self.solid_buffers
+    }
+    pub fn set_transparent_buffer(&mut self, slice: u32, buffers: (wgpu::Buffer, wgpu::Buffer, u32)) {
+        self.transparent_buffers[slice as usize] = buffers;
+    }
+    pub fn set_transparent_buffers(&mut self, buffers: Vec<(wgpu::Buffer, wgpu::Buffer, u32)>) {
+        self.transparent_buffers = buffers;
+    }
+    pub fn get_transparent_buffer(&self, slice: u32) -> &(wgpu::Buffer, wgpu::Buffer, u32) {
+        &self.transparent_buffers[slice as usize]
+    }
+    pub fn get_transparent_buffers(&self) -> &Vec<(wgpu::Buffer, wgpu::Buffer, u32)> {
+        &self.transparent_buffers
     }
 
     pub fn modify_block_at<F>(&mut self, x: u32, y: u32, z: u32, mut callback: F) where F: FnMut(&mut BlockType) {

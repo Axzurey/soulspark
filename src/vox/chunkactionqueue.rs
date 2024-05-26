@@ -3,7 +3,7 @@ use std::collections::{HashMap, VecDeque};
 use cgmath::{Vector2, Vector3};
 
 use crate::blocks::block::BlockType;
-
+#[derive(Debug)]
 pub enum ChunkAction {
     BreakBlock(Vector3<i32>),
     PlaceBlock(BlockType),

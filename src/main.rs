@@ -61,7 +61,7 @@ async fn main() {
         let cloned_label = text_label.clone();
 
         workspace.input_service.on_mouse_click.connect(move |(btn, _)| {
-            println!("Hello world!");
+
             let lock = &mut wa.write().unwrap();
 
             let p = lock.current_camera.position;
@@ -72,9 +72,6 @@ async fn main() {
         
             match res {
                 Some(hit) => {
-                    cloned_label.write().unwrap().set_text(hit.hit.get_name());
-                    println!("{:?}", hit.hit.get_name());
-
                     let abs = hit.hit.get_absolute_position();
 
                     if btn == MouseButton::Left {
@@ -93,8 +90,7 @@ async fn main() {
                     }
                 },
                 None => {
-                    cloned_label.write().unwrap().set_text("NOTHING HIT".to_owned());
-                    println!("Nothing");
+                    
                 }
             }
             //println doesn't flush in another thread...

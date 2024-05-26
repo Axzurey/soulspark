@@ -17,6 +17,7 @@ struct RendererGlobals {
 
 pub struct MainRenderer {
     surface_pipeline: RenderPipeline,
+    transparent_surface_pipeline: RenderPipeline,
     object_pipeline: RenderPipeline,
     material_bind_group_layout: BindGroupLayout,
     texture_format: wgpu::TextureFormat,
@@ -173,6 +174,22 @@ impl MainRenderer {
             false
         );
 
+        let transparent_surface_pipeline = create_render_pipeline(
+            "surface_pipeline",
+            device,
+            &surface_pipeline_layout,
+            surface_texture_format,
+            Some(TextureFormat::Depth32Float),
+            &[SurfaceVertex::desc(), ChunkDataVertex::desc()],
+            "res/shaders/surfaceshader.wgsl",
+            true,
+            false,
+            None,
+            false,
+            false,
+            false
+        );
+
         let object_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("object pipeline layout"),
             bind_group_layouts: &[&texture_bindgroup_layout, &camera_bindgroup_layout, &global_bindgroup_layout, &shadow_bindgroup_layout],
@@ -232,6 +249,7 @@ impl MainRenderer {
         Self {
             material_bind_group_layout,
             surface_pipeline,
+            transparent_surface_pipeline,
             texture_format,
             texture_bindgroup,
             texture_bindgroup_layout,
@@ -565,6 +583,53 @@ impl MainRenderer {
                 i += 1;
             }
         }
-        //println!("frame: {}ms", t.elapsed_ms());
+        drop(render_pass);
+
+        let mut transparency_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("transparent render pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment { 
+                view: &output_view, 
+                resolve_target: None, 
+                ops: wgpu::Operations { 
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store
+                }
+            })],
+            depth_stencil_attachment: Some(
+                wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.view,
+                    depth_ops: None,
+                    stencil_ops: None,
+                }
+            ),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        transparency_render_pass.set_pipeline(&self.transparent_surface_pipeline);
+        transparency_render_pass.set_bind_group(0, &self.texture_bindgroup, &[]);
+        transparency_render_pass.set_bind_group(1, camera_bindgroup, &[]);
+
+        for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
+            let out = chunk.get_transparent_buffers();
+
+            let mut i = 0;
+
+            for (vertex_buffer, index_buffer, ilen) in out {
+                if *ilen == 0 {
+                    i += 1;
+                    continue;
+                };
+                
+                transparency_render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                transparency_render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                transparency_render_pass.set_vertex_buffer(1, chunk.slice_vertex_buffers[i].slice(..));
+                transparency_render_pass.draw_indexed(0..*ilen, 0, 0..1);
+
+                i += 1;
+            }
+        }
+        drop(transparency_render_pass);
+        println!("frame: {}ms", t.elapsed_ms());
     }
 }

@@ -16,7 +16,8 @@ pub struct ChunkManager {
     render_distance: u32,
     seed: u32,
     noise_gen: Perlin,
-    pub action_queue: ChunkActionQueue
+    pub action_queue: ChunkActionQueue,
+    update_queue: ChunkActionQueue
 }
 
 pub fn get_block_at_absolute(x: i32, y: i32, z: i32, chunks: &HashMap<u32, Chunk>) -> Option<&BlockType> {
@@ -42,37 +43,56 @@ impl ChunkManager {
             render_distance: 10,
             seed: 52352,
             noise_gen: Perlin::new(rand::rngs::StdRng::seed_from_u64(52352).next_u32()),
-            action_queue: ChunkActionQueue::new()
+            action_queue: ChunkActionQueue::new(),
+            update_queue: ChunkActionQueue::new()
         }
     }
 
     pub fn on_frame_action(&mut self, device: &wgpu::Device) {
-        const MAX_ACTIONS: u32 = 3; //pretty good number for most devices? probably?
+        let t = Stopwatch::start_new();
+        const MAX_ACTIONS: u32 = 15;
         for _ in 0..MAX_ACTIONS {
             let res = self.action_queue.get_next_action();
             if res.is_none() {break;}
 
-            match res.unwrap() {
+            let u = res.unwrap();
+            match u {
                 ChunkAction::BreakBlock(pos) => {
                     self.break_block(device, pos.x, pos.y as u32, pos.z)
                 },
                 ChunkAction::PlaceBlock(block) => {
                     self.place_block(device, block)
                 },
+                _ => {panic!("{:?} in wrong queue(action)", u)}
+            }
+        }
+        
+        const MAX_UPDATES: u32 = 7; //pretty good number for most devices? probably?
+        
+        for _ in 0..MAX_UPDATES {
+            let res = self.update_queue.get_next_action();
+            if res.is_none() {break;}
+
+            let u = res.unwrap();
+
+            match u {
                 ChunkAction::UpdateChunkMesh(p) => {
                     let ind = xz_to_index(p.x, p.z);
                     let mesh = self.mesh_slice(device, self.chunks.get(&ind).unwrap(), p.y as u32);
 
                     let chunk = self.chunks.get_mut(&ind).unwrap();
                     
-                    chunk.set_solid_buffer(p.y as u32, mesh);
+                    chunk.set_solid_buffer(p.y as u32, mesh.0);
+                    chunk.set_transparent_buffer(p.y as u32, mesh.1);
                 },
                 ChunkAction::UpdateChunkLighting(p) => {
                     let ind = xz_to_index(p.x, p.y);
                     self.flood_lights(ind);
-                }
+                },
+                _ => {panic!("{:?} in wrong queue(update)", u)}
             }
         }
+        println!("FRAME: {}ms", t.elapsed_ms());
     }
 
     pub fn generate_chunks(&mut self, device: &wgpu::Device) {
@@ -110,13 +130,15 @@ impl ChunkManager {
         println!("Took {} seconds to mesh all", t.elapsed_ms() / 1000);
     }
 
-    pub fn mesh_slice(&self, device: &wgpu::Device, chunk: &Chunk, y_slice: u32) -> (wgpu::Buffer, wgpu::Buffer, u32) {
+    pub fn mesh_slice(&self, device: &wgpu::Device, chunk: &Chunk, y_slice: u32) -> ((wgpu::Buffer, wgpu::Buffer, u32), (wgpu::Buffer, wgpu::Buffer, u32)) {
         let mut vertices: Vec<SurfaceVertex> = Vec::with_capacity(16 * 16 * 16 * 6 * 4);
         let mut indices: Vec<u32> = Vec::with_capacity(16 * 16 * 16 * 6 * 6);
         let rel_abs_x = chunk.position.x * 16;
         let rel_abs_z = chunk.position.y * 16;
         let y_start = y_slice * 16;
         let y_end = (y_slice + 1) * 16;
+        let mut vertices_transparent: Vec<SurfaceVertex> = Vec::with_capacity(16 * 16 * 16 * 6 * 4);
+        let mut indices_transparent: Vec<u32> = Vec::with_capacity(16 * 16 * 16 * 6 * 6);
 
         for x in 0..16 {
             for z in 0..16 {
@@ -127,7 +149,7 @@ impl ChunkManager {
                     let y = yt % 16;
                     let block_at = chunk.get_block_at(x, yt, z);
 
-                    if block_at.has_partial_transparency() || !block_at.does_mesh() {
+                    if !block_at.does_mesh() {
                         continue;
                     }
 
@@ -214,11 +236,21 @@ impl ChunkManager {
                                     ),
                                 };
 
-                                indices.extend(face_indices.iter().map(|&index| index + current_l));
-                                for (j, &pos) in face_vertices.iter().enumerate() {
-                                    vertices.push(SurfaceVertex::from_position(
-                                        pos, face, j as u32, block_at.get_surface_textures(face), illumination
-                                    ));
+                                if block_at.has_partial_transparency() {
+                                    indices_transparent.extend(face_indices.iter().map(|&index| index + current_l));
+                                    for (j, &pos) in face_vertices.iter().enumerate() {
+                                        vertices_transparent.push(SurfaceVertex::from_position(
+                                            pos, face, j as u32, block_at.get_surface_textures(face), illumination
+                                        ));
+                                    }
+                                }
+                                else {
+                                    indices.extend(face_indices.iter().map(|&index| index + current_l));
+                                    for (j, &pos) in face_vertices.iter().enumerate() {
+                                        vertices.push(SurfaceVertex::from_position(
+                                            pos, face, j as u32, block_at.get_surface_textures(face), illumination
+                                        ));
+                                    }
                                 }
                             }
                         }
@@ -241,7 +273,21 @@ impl ChunkManager {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        (vertex_buffer, index_buffer, ilen)
+        let ilen_t = indices_transparent.len() as u32;
+
+        let vertex_buffer_t = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!("Chunk Vertex Buffer Transparent")),
+            contents: bytemuck::cast_slice(&vertices_transparent),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let index_buffer_t = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!("Chunk Index Buffer Transparent")),
+            contents: bytemuck::cast_slice(&indices_transparent),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        ((vertex_buffer, index_buffer, ilen), ((vertex_buffer_t, index_buffer_t, ilen_t)))
     }
 
     pub fn get_block_at_absolute(&self, x: i32, y: i32, z: i32) -> Option<&BlockType> {
@@ -297,7 +343,7 @@ impl ChunkManager {
             let chunk = self.chunks.get(&index);
             if chunk.is_none() {return};
 
-            self.action_queue.update_chunk_lighting(Vector2::new(v.0, v.1));
+            self.update_queue.update_chunk_lighting(Vector2::new(v.0, v.1));
         });
 
         let xyz: Vector3<f32> = Vector3::new(
@@ -309,7 +355,7 @@ impl ChunkManager {
         requires_meshing.sort_by(|a, b| (a - xyz).magnitude().partial_cmp(&(b - xyz).magnitude()).unwrap());
 
         for v in requires_meshing {
-            self.action_queue.update_chunk_mesh(Vector3::new(v.x as i32, v.y as i32, v.z as i32));
+            self.update_queue.update_chunk_mesh(Vector3::new(v.x as i32, v.y as i32, v.z as i32));
         }
     }
 
@@ -350,7 +396,7 @@ impl ChunkManager {
             let chunk = self.chunks.get(&index);
             if chunk.is_none() {return};
 
-            self.action_queue.update_chunk_lighting(Vector2::new(v.0, v.1));
+            self.update_queue.update_chunk_lighting(Vector2::new(v.0, v.1));
         });
 
         let xyz: Vector3<f32> = Vector3::new(
@@ -362,7 +408,7 @@ impl ChunkManager {
         requires_meshing.sort_by(|a, b| (a - xyz).magnitude().partial_cmp(&(b - xyz).magnitude()).unwrap());
 
         for v in requires_meshing {
-            self.action_queue.update_chunk_mesh(Vector3::new(v.x as i32, v.y as i32, v.z as i32));
+            self.update_queue.update_chunk_mesh(Vector3::new(v.x as i32, v.y as i32, v.z as i32));
         }
     }
 
@@ -416,13 +462,19 @@ impl ChunkManager {
         let chunk = self.chunks.get(&index).unwrap();
 
         let slices = (0..16).into_iter();
+        
+        let mut v0: Vec<(wgpu::Buffer, wgpu::Buffer, u32)> = Vec::new();
+        let mut v1: Vec<(wgpu::Buffer, wgpu::Buffer, u32)> = Vec::new();
 
-        let buffers = slices.map(|s| {
-            self.mesh_slice(device, chunk, s)
-        }).collect::<Vec<(wgpu::Buffer, wgpu::Buffer, u32)>>();
+        slices.for_each(|s| {
+            let out = self.mesh_slice(device, chunk, s);
+            v0.push(out.0);
+            v1.push(out.1);
+        });
 
         let rechunk = self.chunks.get_mut(&index).unwrap();
         
-        rechunk.set_solid_buffers(buffers);
+        rechunk.set_solid_buffers(v0);
+        rechunk.set_transparent_buffers(v1);
     }
 }
