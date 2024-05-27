@@ -7,7 +7,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use stopwatch::Stopwatch;
 use wgpu::util::DeviceExt;
 
-use crate::{blocks::{airblock::AirBlock, block::{calculate_illumination_bytes, Block, BlockFace, BlockType}}, engine::surfacevertex::SurfaceVertex, vox::chunkactionqueue::ChunkAction};
+use crate::{blocks::{airblock::AirBlock, block::{calculate_illumination_bytes, Block, BlockFace, BlockType, Blocks}}, engine::surfacevertex::SurfaceVertex, vox::chunkactionqueue::ChunkAction};
 
 use super::{chunk::{local_xyz_to_index, xz_to_index, Chunk}, chunkactionqueue::ChunkActionQueue};
 
@@ -149,7 +149,7 @@ impl ChunkManager {
                     let y = yt % 16;
                     let block_at = chunk.get_block_at(x, yt, z);
 
-                    if !block_at.does_mesh() {
+                    if !block_at.does_mesh() || block_at.get_block() == Blocks::AIR {
                         continue;
                     }
 
@@ -173,10 +173,16 @@ impl ChunkManager {
                         BlockFace::Bottom,
                     ];
 
+                    let is_transparent = block_at.has_partial_transparency();
+
+                    let cb = block_at.get_block();
+
                     for (i, neighbor) in neighbors.iter().enumerate() {
                         if let Some(neighbor_block) = neighbor {
-                            if neighbor_block.has_partial_transparency() {
-                                let current_l = vertices.len() as u32;
+                            if (neighbor_block.has_partial_transparency() && !is_transparent) || (is_transparent && cb != Blocks::AIR && cb != neighbor_block.get_block()) {
+                                let current_l = if is_transparent {
+                                    vertices_transparent.len() as u32
+                                } else {vertices.len() as u32};
                                 let face = faces[i];
 
                                 let (face_vertices, face_indices) = match face {
@@ -236,7 +242,7 @@ impl ChunkManager {
                                     ),
                                 };
 
-                                if block_at.has_partial_transparency() {
+                                if is_transparent {
                                     indices_transparent.extend(face_indices.iter().map(|&index| index + current_l));
                                     for (j, &pos) in face_vertices.iter().enumerate() {
                                         vertices_transparent.push(SurfaceVertex::from_position(

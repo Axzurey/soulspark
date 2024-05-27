@@ -18,8 +18,26 @@
         "filter": "nearest"
     },
     {
-        "path": "textures/leaf.png",
+        "path": "textures/stone.png",
         "alias": "stone",
+        "type": "diffuse",
+        "filter": "nearest"
+    },
+    {
+        "path": "textures/log.png",
+        "alias": "log",
+        "type": "diffuse",
+        "filter": "nearest"
+    },
+    {
+        "path": "textures/log_top.png",
+        "alias": "log_top",
+        "type": "diffuse",
+        "filter": "nearest"
+    },
+    {
+        "path": "textures/leaf.png",
+        "alias": "leaf",
         "type": "diffuse",
         "filter": "nearest"
     }

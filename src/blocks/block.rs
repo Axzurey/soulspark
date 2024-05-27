@@ -1,15 +1,18 @@
 use cgmath::Vector3;
+use serde::Deserialize;
 use core::fmt::Debug;
 use std::ops::BitOrAssign;
 
 pub type BlockType = Box<dyn Block + Send + Sync>;
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq, Debug, Deserialize)]
 pub enum Blocks {
     AIR,
     DIRT,
     GRASS,
-    STONE
+    STONE,
+    Log,
+    Leaf
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
