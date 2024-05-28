@@ -21,7 +21,7 @@ static SPLINE_WORM: Lazy<Spline<f32, f32>> = Lazy::new(|| {
         Key::new(6., 0.7, Interpolation::Linear),
         Key::new(15., 0.7, Interpolation::Linear),
         Key::new(50., 0.8, Interpolation::Linear),
-        Key::new(60., 1.9, Interpolation::Linear),
+        Key::new(60., 10.9, Interpolation::Linear),
         Key::new(64., 2.0, Interpolation::Linear),
         Key::new(80., 2.1, Interpolation::Linear),
         Key::new(150., 2.3, Interpolation::Linear),
@@ -57,7 +57,7 @@ static SPLINE_FLATNESS: Lazy<Spline<f32, f32>> = Lazy::new(|| {
         Key::new(0.0, 0.0, Interpolation::Linear),
         Key::new(0.3, 0.05, Interpolation::Linear),
         Key::new(0.6, 0.01, Interpolation::Linear),
-        Key::new(0.7, 0.9, Interpolation::Linear),
+        Key::new(0.7, 00.9, Interpolation::Linear),
         Key::new(1.0, 1.0, Interpolation::Linear),
     ])
 });
@@ -118,6 +118,17 @@ pub fn get_density_for_cave(noisegen: Perlin, x: i32, y: i32, z: i32) -> bool {
     let p = perlin_octaved_3d(noisegen, x, y, z, 1, 1.1, 1.35, 0.6, 1.1, 1.) * 10.;
 
     p * SPLINE_CAVE_Y_MOD.sample(y as f32).unwrap() < 1.
+}
+
+pub fn density_map_plane(noisegen: Perlin, x: i32, z: i32) -> bool {
+    let noise = perlin_octaved_2d(noisegen, x, z, 1, 1.3, 0.7, 0.2, 0.5, 25.0);
+
+    let noise1 = perlin_octaved_2d(noisegen, x + 1, z, 1, 1.3, 0.7, 0.2, 0.5, 25.0);
+    let noise2 = perlin_octaved_2d(noisegen, x - 1, z, 1, 1.3, 0.7, 0.2, 0.5, 25.0);
+    let noise3 = perlin_octaved_2d(noisegen, x, z + 1, 1, 1.3, 0.7, 0.2, 0.5, 25.0);
+    let noise4 = perlin_octaved_2d(noisegen, x, z - 1, 1, 1.3, 0.7, 0.2, 0.5, 25.0);
+
+    noise < noise1 && noise < noise2 && noise < noise3 && noise < noise4
 }
 
 pub fn generate_surface_height(noisegen: Perlin, x: i32, z: i32) -> i32 {

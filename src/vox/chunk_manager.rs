@@ -17,7 +17,8 @@ pub struct ChunkManager {
     seed: u32,
     noise_gen: Perlin,
     pub action_queue: ChunkActionQueue,
-    update_queue: ChunkActionQueue
+    update_queue: ChunkActionQueue,
+    extra_blocks: HashMap<u32, Vec<BlockType>>
 }
 
 pub fn get_block_at_absolute(x: i32, y: i32, z: i32, chunks: &HashMap<u32, Chunk>) -> Option<&BlockType> {
@@ -44,7 +45,8 @@ impl ChunkManager {
             seed: 52352,
             noise_gen: Perlin::new(rand::rngs::StdRng::seed_from_u64(52352).next_u32()),
             action_queue: ChunkActionQueue::new(),
-            update_queue: ChunkActionQueue::new()
+            update_queue: ChunkActionQueue::new(),
+            extra_blocks: HashMap::new()
         }
     }
 
@@ -67,7 +69,7 @@ impl ChunkManager {
             }
         }
         
-        const MAX_UPDATES: u32 = 7; //pretty good number for most devices? probably?
+        const MAX_UPDATES: u32 = 2; //pretty good number for most devices? probably?
         
         for _ in 0..MAX_UPDATES {
             let res = self.update_queue.get_next_action();
@@ -99,7 +101,7 @@ impl ChunkManager {
         let t = Stopwatch::start_new();
         for x in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
             for z in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
-                let chunk = Chunk::new(device, Vector2::new(x, z), self.noise_gen);
+                let chunk = Chunk::new(device, Vector2::new(x, z), self.noise_gen, &mut self.extra_blocks);
                 self.chunks.insert(xz_to_index(x, z), chunk);
             }
         }

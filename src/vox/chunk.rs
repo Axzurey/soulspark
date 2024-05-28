@@ -1,4 +1,4 @@
-use std::{mem, sync::{Arc, RwLock}};
+use std::{collections::HashMap, mem, sync::{Arc, RwLock}};
 
 use cached::proc_macro::cached;
 use cgmath::{Vector2, Vector3};
@@ -7,7 +7,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use stopwatch::Stopwatch;
 use wgpu::util::DeviceExt;
 
-use crate::{blocks::{airblock::AirBlock, block::{Block, BlockType}, dirtblock::DirtBlock, grassblock::GrassBlock, stoneblock::StoneBlock}, engine::vertex::{ModelVertex, Vertex}};
+use crate::{blocks::{airblock::AirBlock, block::{Block, BlockType, Blocks}, dirtblock::DirtBlock, grassblock::GrassBlock, stoneblock::StoneBlock}, engine::vertex::{ModelVertex, Vertex}, vox::{structure_loader::get_blocks_for_structure_at_point, worldgen::density_map_plane}};
 
 use super::worldgen::generate_surface_height;
 
@@ -57,14 +57,14 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn new(device: &wgpu::Device, position: Vector2<i32>, noisegen: Perlin) -> Self {
+    pub fn new(device: &wgpu::Device, position: Vector2<i32>, noisegen: Perlin, extra_blocks: &mut HashMap<u32, Vec<BlockType>>) -> Self {
         let t = Stopwatch::start_new();
 
         let iter_layers = (0..16).into_iter();
 
-        let blocks: Vec<Vec<BlockType>> = Vec::new();
+        let mut extra_blocks_same: Vec<BlockType> = Vec::new();
 
-        let blocks = iter_layers.map(|y_slice| {
+        let mut blocks = iter_layers.map(|y_slice| {
             let mut out: Vec<BlockType> = Vec::with_capacity(4096);
 
             let uninit = out.spare_capacity_mut();
@@ -112,6 +112,16 @@ impl Chunk {
                             )
                         };
 
+                        if abs_y == floor_level + 1 {
+                            let should_tree = density_map_plane(noisegen, abs_x, abs_z);
+
+                            if should_tree {
+                                let blocks = get_blocks_for_structure_at_point("tree", 0, Vector3::new(abs_x, abs_y, abs_z));
+
+                                extra_blocks_same.extend(blocks);
+                            }
+                        }
+
                         uninit[local_xyz_to_index(x, y as u32, z) as usize].write(block);
                     }
                 }
@@ -121,6 +131,17 @@ impl Chunk {
 
             out
         }).collect::<Vec<Vec<BlockType>>>();
+
+        for block in extra_blocks_same {
+            if block.get_block() == Blocks::AIR {continue};
+
+            let p = block.get_absolute_position();
+
+            if p.x.div_euclid(16) == position.x && p.z.div_euclid(16) == position.y {
+                let rel = block.get_relative_position();
+                blocks[p.y.div_euclid(16) as usize][local_xyz_to_index(rel.x, rel.y, rel.z) as usize] = block;
+            }
+        }
 
         let slice_vertex_buffers = (0..16).map(|y| {
             device.create_buffer_init(&wgpu::util::BufferInitDescriptor {

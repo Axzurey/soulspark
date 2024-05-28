@@ -4,14 +4,14 @@ use crate::engine::texture_loader::get_indices_from_texture;
 
 use super::block::Block;
 
-pub struct DirtBlock {
+pub struct LeafBlock {
     relative_position: Vector3<u32>,
     absolute_position: Vector3<i32>,
     sunlight_intensity: u8,
     lights: [u8; 3]
 }
 
-impl DirtBlock {
+impl LeafBlock {
     pub fn new(
         relative_position: Vector3<u32>,
         absolute_position: Vector3<i32>
@@ -25,7 +25,7 @@ impl DirtBlock {
     }
 }
 
-impl Block for DirtBlock {
+impl Block for LeafBlock {
     fn get_absolute_position(&self) -> Vector3<i32> {
         self.absolute_position
     }
@@ -74,6 +74,6 @@ impl Block for DirtBlock {
         self.sunlight_intensity
     }
     fn get_block(&self) -> super::block::Blocks {
-        super::block::Blocks::Leaf
+        super::block::Blocks::LEAF
     }
 }

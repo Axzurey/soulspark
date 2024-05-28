@@ -4,14 +4,14 @@ use crate::engine::texture_loader::get_indices_from_texture;
 
 use super::block::Block;
 
-pub struct DirtBlock {
+pub struct LogBlock {
     relative_position: Vector3<u32>,
     absolute_position: Vector3<i32>,
     sunlight_intensity: u8,
     lights: [u8; 3]
 }
 
-impl DirtBlock {
+impl LogBlock {
     pub fn new(
         relative_position: Vector3<u32>,
         absolute_position: Vector3<i32>
@@ -25,7 +25,7 @@ impl DirtBlock {
     }
 }
 
-impl Block for DirtBlock {
+impl Block for LogBlock {
     fn get_absolute_position(&self) -> Vector3<i32> {
         self.absolute_position
     }
@@ -43,7 +43,7 @@ impl Block for DirtBlock {
     }
 
     fn get_name(&self) -> String {
-        "dirt block".to_owned()
+        "log block".to_owned()
     }
 
     fn is_fluid(&self) -> bool {
@@ -53,10 +53,10 @@ impl Block for DirtBlock {
     fn get_surface_textures(&self, face: super::block::BlockFace) -> (usize, usize, usize) {
         match face {
             super::block::BlockFace::Top | super::block::BlockFace::Bottom => {
-                (get_indices_from_texture("log"), 0, 0)
+                (get_indices_from_texture("log_top"), 0, 0)
             },
             _ => {
-                (get_indices_from_texture("log_top"), 0, 0)
+                (get_indices_from_texture("log"), 0, 0)
             }
         }
     }
@@ -81,6 +81,6 @@ impl Block for DirtBlock {
         self.sunlight_intensity
     }
     fn get_block(&self) -> super::block::Blocks {
-        super::block::Blocks::Log
+        super::block::Blocks::LOG
     }
 }

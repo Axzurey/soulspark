@@ -3,16 +3,32 @@ use serde::Deserialize;
 use core::fmt::Debug;
 use std::ops::BitOrAssign;
 
+use super::{airblock::AirBlock, dirtblock::DirtBlock, grassblock::GrassBlock, leafblock::LeafBlock, logblock::LogBlock, stoneblock::StoneBlock};
+
 pub type BlockType = Box<dyn Block + Send + Sync>;
 
-#[derive(PartialEq, Eq, Debug, Deserialize)]
+pub fn create_block_default(block: Blocks, absolute_position: Vector3<i32>) -> BlockType {
+    let relative_position = absolute_position.map(|v| v.rem_euclid(16) as u32);
+
+    match block {
+        Blocks::AIR => Box::new(AirBlock::new(relative_position, absolute_position)),
+        Blocks::DIRT => Box::new(DirtBlock::new(relative_position, absolute_position)),
+        Blocks::GRASS => Box::new(GrassBlock::new(relative_position, absolute_position)),
+        Blocks::STONE => Box::new(StoneBlock::new(relative_position, absolute_position)),
+        Blocks::LOG => Box::new(LogBlock::new(relative_position, absolute_position)),
+        Blocks::LEAF => Box::new(LeafBlock::new(relative_position, absolute_position))
+    }
+}
+
+#[derive(PartialEq, Eq, Debug, Deserialize, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
 pub enum Blocks {
     AIR,
     DIRT,
     GRASS,
     STONE,
-    Log,
-    Leaf
+    LOG,
+    LEAF
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]

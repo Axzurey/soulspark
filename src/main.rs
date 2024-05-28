@@ -16,6 +16,7 @@ use state::workspace::Workspace;
 use stopwatch::Stopwatch;
 use util::inputservice::{InputService, MouseLockState};
 use vox::chunk::xz_to_index;
+use vox::structure_loader::load_structures;
 use winit::event::{DeviceEvent, Event, KeyEvent, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -39,6 +40,8 @@ async fn main() {
     let event_loop = EventLoop::new().unwrap();
 
     let window = Arc::new(WindowBuilder::new().build(&event_loop).unwrap());
+
+    load_structures();
     
     let mut gamewindow = GameWindow::new(window.clone()).block_on();
 
@@ -112,6 +115,12 @@ async fn main() {
 
     textbutton.write().unwrap().on_click.connect(|v| {
         println!("HELLO");
+    });
+
+    let chunk_update_thread = std::thread::spawn(|| {
+        loop {
+            
+        }
     });
 
     {
