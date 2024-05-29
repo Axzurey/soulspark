@@ -448,6 +448,11 @@ impl ChunkManager {
                         }
                         initial_height = y;
                     }
+                    else {
+                        chunk.modify_block_at(x as u32, y as u32, z as u32, |block| {
+                            block.set_sunlight_intensity(15);
+                        });
+                    }
                 }
             }
         }

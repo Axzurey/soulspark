@@ -16,6 +16,7 @@ use state::workspace::Workspace;
 use stopwatch::Stopwatch;
 use util::inputservice::{InputService, MouseLockState};
 use vox::chunk::xz_to_index;
+use vox::chunkactionqueue::ChunkAction;
 use vox::structure_loader::load_structures;
 use winit::event::{DeviceEvent, Event, KeyEvent, WindowEvent};
 use winit::event_loop::EventLoop;
@@ -117,11 +118,42 @@ async fn main() {
         println!("HELLO");
     });
 
-    let chunk_update_thread = std::thread::spawn(|| {
-        loop {
-            
-        }
-    });
+    
+    {
+        let workspace = workspace_arc.clone();
+        let chunk_update_thread = std::thread::spawn(move || {
+            loop {
+                let mut write = workspace.write().unwrap();
+
+                let queue = &mut write.chunk_manager.action_queue;
+
+                loop {
+                    let _action = queue.get_next_action();
+
+                    if _action.is_none() {break}
+
+                    let action = _action.unwrap();
+
+                    match action {
+                        ChunkAction::UpdateChunkMesh(p) => {
+                            let ind = xz_to_index(p.x, p.z);
+                            let mesh = self.mesh_slice(device, self.chunks.get(&ind).unwrap(), p.y as u32);
+        
+                            let chunk = self.chunks.get_mut(&ind).unwrap();
+                            
+                            chunk.set_solid_buffer(p.y as u32, mesh.0);
+                            chunk.set_transparent_buffer(p.y as u32, mesh.1);
+                        },
+                        ChunkAction::UpdateChunkLighting(p) => {
+                            let ind = xz_to_index(p.x, p.y);
+                            self.flood_lights(ind);
+                        },
+                        _ => {panic!("{:?} in wrong queue(update)", u)}
+                    }
+                }
+            }
+        });
+    }
 
     {
         let wa = workspace_arc.clone();

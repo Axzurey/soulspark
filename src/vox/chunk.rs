@@ -116,9 +116,37 @@ impl Chunk {
                             let should_tree = density_map_plane(noisegen, abs_x, abs_z);
 
                             if should_tree {
-                                let blocks = get_blocks_for_structure_at_point("tree", 0, Vector3::new(abs_x, abs_y, abs_z));
+                                let mut blocks = get_blocks_for_structure_at_point("tree", 0, Vector3::new(abs_x, abs_y, abs_z));
+
+                                loop {
+
+                                    let nblock = blocks.pop();
+
+                                    if nblock.is_none() {break}
+
+                                    let block = nblock.unwrap();
+
+                                    let abs_dived = block.get_absolute_position().map(|v| {
+                                        v.div_euclid(16)
+                                    });
+                                    
+                                    if abs_dived.x != position.x || abs_dived.y != position.y {
+                                        let xz = xz_to_index(abs_dived.x, abs_dived.z);
+                                        if extra_blocks.contains_key(&xz) {
+                                            let mutlist = extra_blocks.get_mut(&xz).unwrap();
+
+                                            mutlist.push(block);
+
+                                        }
+                                        else {
+                                            let list = vec![block];
+                                            extra_blocks.insert(xz, list);
+                                        }
+                                    }
+                                }
 
                                 extra_blocks_same.extend(blocks);
+
                             }
                         }
 
@@ -131,6 +159,23 @@ impl Chunk {
 
             out
         }).collect::<Vec<Vec<BlockType>>>();
+
+        let k = xz_to_index(position.x, position.y);
+
+        if extra_blocks.contains_key(&k) {
+            let new_blocks = extra_blocks.remove(&k).unwrap();
+
+            for block in new_blocks {
+                if block.get_block() == Blocks::AIR {continue};
+
+                let p = block.get_absolute_position();
+
+                if p.x.div_euclid(16) == position.x && p.z.div_euclid(16) == position.y {
+                    let rel = block.get_relative_position();
+                    blocks[p.y.div_euclid(16) as usize][local_xyz_to_index(rel.x, rel.y, rel.z) as usize] = block;
+                }
+            }
+        }
 
         for block in extra_blocks_same {
             if block.get_block() == Blocks::AIR {continue};
