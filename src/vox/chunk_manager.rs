@@ -60,7 +60,7 @@ pub fn mesh_slice_arrayed(chunk_x: i32, chunk_z: i32, y_slice: u32, chunks: &Has
 
             for yt in y_start..y_end {
                 let y = yt % 16;
-                let block_at = &chunk[(y / 16) as usize][local_xyz_to_index(x, y, z) as usize];
+                let block_at = &chunk[(yt / 16) as usize][local_xyz_to_index(x, y, z) as usize];
 
                 if !block_at.does_mesh() || block_at.get_block() == Blocks::AIR {
                     continue;
@@ -235,7 +235,7 @@ impl ChunkManager {
 
             match u {
                 ChunkAction::UpdateChunkMesh(p) => {
-
+                    let t = Stopwatch::start_new();
                     let mut chunks = HashMap::new();
                     (p.x - 1..=p.x + 1).for_each(|x| {
                         (p.z - 1..=p.z + 1).for_each(|z| {
@@ -245,6 +245,8 @@ impl ChunkManager {
                             chunks.insert(xz, chunk.unwrap().grid.clone());
                         });
                     });
+
+                    println!("MS: {}", t.elapsed_ms());
 
                     chunk_send.send((p.x, p.z, p.y as u32, chunks)).unwrap();
 

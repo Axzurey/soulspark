@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::ops::DerefMut;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc, RwLock};
 
@@ -41,6 +42,11 @@ async fn dosomth(x: &u32) {
 
 #[tokio::main()]
 async fn main() {
+
+    let a: Arc<Vec<u32>> = Arc::new(Vec::new());
+
+    //find way to edit arc
+
     let event_loop = EventLoop::new().unwrap();
 
     let window = Arc::new(WindowBuilder::new().build(&event_loop).unwrap());
@@ -224,8 +230,11 @@ async fn main() {
                                 workspace.chunk_manager.on_frame_action(&gamewindow.device, &chunksend);
                                 workspace.input_service.update();
 
+                                
                                 if let Ok(res) = meshedget.try_recv() {
+                                    let t = Stopwatch::start_new();
                                     workspace.chunk_manager.finalize_mesh(res.0, res.1, res.2, &gamewindow.device, res.3);
+                                    println!("{}", t);
                                 }
                             }
                         }
