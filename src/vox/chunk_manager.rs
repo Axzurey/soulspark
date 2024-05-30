@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, VecDeque}, sync::{Arc, RwLock}};
+use std::{collections::{HashMap, VecDeque}, sync::{mpsc::Sender, Arc, RwLock}, thread};
 
 use cgmath::{InnerSpace, Vector2, Vector3};
 use noise::Perlin;
@@ -9,7 +9,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{blocks::{airblock::AirBlock, block::{calculate_illumination_bytes, Block, BlockFace, BlockType, Blocks}}, engine::surfacevertex::SurfaceVertex, vox::chunkactionqueue::ChunkAction};
 
-use super::{chunk::{local_xyz_to_index, xz_to_index, Chunk}, chunkactionqueue::ChunkActionQueue};
+use super::{chunk::{local_xyz_to_index, xz_to_index, Chunk, ChunkGridType}, chunkactionqueue::ChunkActionQueue};
 
 pub struct ChunkManager {
     pub chunks: HashMap<u32, Chunk>,
@@ -31,6 +31,162 @@ pub fn get_block_at_absolute(x: i32, y: i32, z: i32, chunks: &HashMap<u32, Chunk
     Some(chunk.get_block_at(x as u32, y as u32, z as u32))
 }
 
+pub fn get_block_at_absolute_arrayed(x: i32, y: i32, z: i32, chunks: &HashMap<u32, ChunkGridType>) -> Option<&BlockType> {
+    if y < 0 || y > 255 {return None};
+    let chunk_x = x.div_euclid(16);
+    let chunk_z = z.div_euclid(16);
+
+    let chunk = chunks.get(&xz_to_index(chunk_x, chunk_z))?;
+
+    Some(&chunk[(y / 16) as usize][local_xyz_to_index(x.rem_euclid(16) as u32, y.rem_euclid(16) as u32, z.rem_euclid(16) as u32) as usize])
+}
+
+pub fn mesh_slice_arrayed(chunk_x: i32, chunk_z: i32, y_slice: u32, chunks: &HashMap<u32, ChunkGridType>) -> ((Vec<SurfaceVertex>, Vec<u32>, u32), (Vec<SurfaceVertex>, Vec<u32>, u32)) {
+    let chunk = &chunks[&xz_to_index(chunk_x, chunk_z)];
+    
+    let mut vertices: Vec<SurfaceVertex> = Vec::with_capacity(16 * 16 * 16 * 6 * 4);
+    let mut indices: Vec<u32> = Vec::with_capacity(16 * 16 * 16 * 6 * 6);
+    let rel_abs_x = chunk_x * 16;
+    let rel_abs_z = chunk_z * 16;
+    let y_start = y_slice * 16;
+    let y_end = (y_slice + 1) * 16;
+    let mut vertices_transparent: Vec<SurfaceVertex> = Vec::with_capacity(16 * 16 * 16 * 6 * 4);
+    let mut indices_transparent: Vec<u32> = Vec::with_capacity(16 * 16 * 16 * 6 * 6);
+
+    for x in 0..16 {
+        for z in 0..16 {
+            let abs_x = x as i32 + rel_abs_x;
+            let abs_z = z as i32 + rel_abs_z;
+
+            for yt in y_start..y_end {
+                let y = yt % 16;
+                let block_at = &chunk[(y / 16) as usize][local_xyz_to_index(x, y, z) as usize];
+
+                if !block_at.does_mesh() || block_at.get_block() == Blocks::AIR {
+                    continue;
+                }
+
+                let illumination = calculate_illumination_bytes(block_at);
+
+                let neighbors = [
+                    get_block_at_absolute_arrayed(abs_x, yt as i32, abs_z + 1, &chunks),
+                    get_block_at_absolute_arrayed(abs_x, yt as i32, abs_z - 1, &chunks),
+                    get_block_at_absolute_arrayed(abs_x + 1, yt as i32, abs_z, &chunks),
+                    get_block_at_absolute_arrayed(abs_x - 1, yt as i32, abs_z, &chunks),
+                    get_block_at_absolute_arrayed(abs_x, yt as i32 + 1, abs_z, &chunks),
+                    get_block_at_absolute_arrayed(abs_x, yt as i32 - 1, abs_z, &chunks),
+                ];
+
+                let faces = [
+                    BlockFace::Front,
+                    BlockFace::Back,
+                    BlockFace::Right,
+                    BlockFace::Left,
+                    BlockFace::Top,
+                    BlockFace::Bottom,
+                ];
+
+                let is_transparent = block_at.has_partial_transparency();
+
+                let cb = block_at.get_block();
+
+                for (i, neighbor) in neighbors.iter().enumerate() {
+                    if let Some(neighbor_block) = neighbor {
+                        if (neighbor_block.has_partial_transparency() && !is_transparent) || (is_transparent && cb != Blocks::AIR && cb != neighbor_block.get_block()) {
+                            let current_l = if is_transparent {
+                                vertices_transparent.len() as u32
+                            } else {vertices.len() as u32};
+                            let face = faces[i];
+
+                            let (face_vertices, face_indices) = match face {
+                                BlockFace::Front => (
+                                    [
+                                        [x, y, z + 1],
+                                        [x + 1, y, z + 1],
+                                        [x, y + 1, z + 1],
+                                        [x + 1, y + 1, z + 1],
+                                    ],
+                                    [0, 1, 2, 1, 3, 2],
+                                ),
+                                BlockFace::Back => (
+                                    [
+                                        [x, y, z],
+                                        [x + 1, y, z],
+                                        [x, y + 1, z],
+                                        [x + 1, y + 1, z],
+                                    ],
+                                    [2, 1, 0, 2, 3, 1],
+                                ),
+                                BlockFace::Right => (
+                                    [
+                                        [x + 1, y, z],
+                                        [x + 1, y, z + 1],
+                                        [x + 1, y + 1, z],
+                                        [x + 1, y + 1, z + 1],
+                                    ],
+                                    [2, 1, 0, 2, 3, 1],
+                                ),
+                                BlockFace::Left => (
+                                    [
+                                        [x, y, z],
+                                        [x, y, z + 1],
+                                        [x, y + 1, z],
+                                        [x, y + 1, z + 1],
+                                    ],
+                                    [0, 1, 2, 1, 3, 2],
+                                ),
+                                BlockFace::Top => (
+                                    [
+                                        [x, y + 1, z],
+                                        [x, y + 1, z + 1],
+                                        [x + 1, y + 1, z],
+                                        [x + 1, y + 1, z + 1],
+                                    ],
+                                    [0, 1, 2, 1, 3, 2],
+                                ),
+                                BlockFace::Bottom => (
+                                    [
+                                        [x, y, z],
+                                        [x, y, z + 1],
+                                        [x + 1, y, z],
+                                        [x + 1, y, z + 1],
+                                    ],
+                                    [2, 1, 0, 2, 3, 1],
+                                ),
+                            };
+
+                            if is_transparent {
+                                indices_transparent.extend(face_indices.iter().map(|&index| index + current_l));
+                                for (j, &pos) in face_vertices.iter().enumerate() {
+                                    vertices_transparent.push(SurfaceVertex::from_position(
+                                        pos, face, j as u32, block_at.get_surface_textures(face), illumination
+                                    ));
+                                }
+                            }
+                            else {
+                                indices.extend(face_indices.iter().map(|&index| index + current_l));
+                                for (j, &pos) in face_vertices.iter().enumerate() {
+                                    vertices.push(SurfaceVertex::from_position(
+                                        pos, face, j as u32, block_at.get_surface_textures(face), illumination
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let ilen = indices.len() as u32;
+    let itlen = indices_transparent.len() as u32;
+
+    (
+        (vertices, indices, ilen),
+        (vertices_transparent, indices_transparent, itlen)
+    )
+}
+
 pub fn push_n(vec: &mut Vec<u32>, start: u32, shifts: [u32; 6]) {
     for i in 0..6 {
         vec.push(start + shifts[i]);
@@ -39,6 +195,7 @@ pub fn push_n(vec: &mut Vec<u32>, start: u32, shifts: [u32; 6]) {
 
 impl ChunkManager {
     pub fn new() -> Self {
+
         Self {
             chunks: HashMap::new(),
             render_distance: 10,
@@ -50,8 +207,7 @@ impl ChunkManager {
         }
     }
 
-    pub fn on_frame_action(&mut self, device: &wgpu::Device) {
-        let t = Stopwatch::start_new();
+    pub fn on_frame_action(&mut self, device: &wgpu::Device, chunk_send: &Sender<(i32, i32, u32, HashMap<u32, ChunkGridType>)>) {
         const MAX_ACTIONS: u32 = 15;
         for _ in 0..MAX_ACTIONS {
             let res = self.action_queue.get_next_action();
@@ -79,13 +235,26 @@ impl ChunkManager {
 
             match u {
                 ChunkAction::UpdateChunkMesh(p) => {
-                    let ind = xz_to_index(p.x, p.z);
-                    let mesh = self.mesh_slice(device, self.chunks.get(&ind).unwrap(), p.y as u32);
 
-                    let chunk = self.chunks.get_mut(&ind).unwrap();
+                    let mut chunks = HashMap::new();
+                    (p.x - 1..=p.x + 1).for_each(|x| {
+                        (p.z - 1..=p.z + 1).for_each(|z| {
+                            let xz = xz_to_index(x, z);
+                            let chunk = self.chunks.get(&xz);
+                            if chunk.is_none() {return};
+                            chunks.insert(xz, chunk.unwrap().grid.clone());
+                        });
+                    });
+
+                    chunk_send.send((p.x, p.z, p.y as u32, chunks)).unwrap();
+
+                    // let ind = xz_to_index(p.x, p.z);
+                    // let mesh = self.mesh_slice(device, self.chunks.get(&ind).unwrap(), p.y as u32);
+
+                    // let chunk = self.chunks.get_mut(&ind).unwrap();
                     
-                    chunk.set_solid_buffer(p.y as u32, mesh.0);
-                    chunk.set_transparent_buffer(p.y as u32, mesh.1);
+                    // chunk.set_solid_buffer(p.y as u32, mesh.0);
+                    // chunk.set_transparent_buffer(p.y as u32, mesh.1);
                 },
                 ChunkAction::UpdateChunkLighting(p) => {
                     let ind = xz_to_index(p.x, p.y);
@@ -94,7 +263,7 @@ impl ChunkManager {
                 _ => {panic!("{:?} in wrong queue(update)", u)}
             }
         }
-        println!("FRAME: {}ms", t.elapsed_ms());
+        //println!("FRAME: {}ms", t.elapsed_ms());
     }
 
     pub fn generate_chunks(&mut self, device: &wgpu::Device) {
@@ -469,6 +638,40 @@ impl ChunkManager {
         //         }
         //     }
         // }
+    }
+
+    pub fn finalize_mesh(&mut self, x: i32, z: i32, slice: u32, device: &wgpu::Device, data: ((Vec<SurfaceVertex>, Vec<u32>, u32), (Vec<SurfaceVertex>, Vec<u32>, u32))) {
+        let ((vertices, indices, ilen), (vertices_transparent, indices_transparent, ilen_t)) = (data.0, data.1);
+
+        let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!("Chunk Vertex Buffer")),
+            contents: bytemuck::cast_slice(&vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!("Chunk Index Buffer")),
+            contents: bytemuck::cast_slice(&indices),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let vertex_buffer_t = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!("Chunk Vertex Buffer Transparent")),
+            contents: bytemuck::cast_slice(&vertices_transparent),
+            usage: wgpu::BufferUsages::VERTEX,
+        });
+
+        let index_buffer_t = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some(&format!("Chunk Index Buffer Transparent")),
+            contents: bytemuck::cast_slice(&indices_transparent),
+            usage: wgpu::BufferUsages::INDEX,
+        });
+
+        let chunk = self.chunks.get_mut(&xz_to_index(x, z)).unwrap();
+
+        chunk.set_solid_buffer(slice, (vertex_buffer, index_buffer, ilen));
+        chunk.set_transparent_buffer(slice, (vertex_buffer_t, index_buffer_t, ilen_t));
+
     }
 
     pub fn mesh_chunk(&mut self, device: &wgpu::Device, index: u32) {

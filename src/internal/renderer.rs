@@ -630,6 +630,6 @@ impl MainRenderer {
             }
         }
         drop(transparency_render_pass);
-        println!("frame: {}ms", t.elapsed_ms());
+        //println!("frame: {}ms", t.elapsed_ms());
     }
 }

@@ -89,6 +89,16 @@ pub trait Block {
     fn get_block(&self) -> Blocks;
 }
 
+impl Clone for Box<dyn Block + Send + Sync> {
+    fn clone(&self) -> Self {
+        create_block_default(self.get_block(), self.get_absolute_position())
+    }
+    
+    fn clone_from(&mut self, source: &Self) {
+        *self = source.clone()
+    }
+}
+
 impl Debug for dyn Block {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", format!("Block {:?}", self.get_name()))

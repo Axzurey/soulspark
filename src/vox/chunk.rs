@@ -46,9 +46,11 @@ impl Vertex for ChunkDataVertex {
     }
 }
 
+pub type ChunkGridType = Vec<Vec<BlockType>>;
+
 pub struct Chunk {
     pub position: Vector2<i32>,
-    pub grid: Vec<Vec<BlockType>>,
+    pub grid: ChunkGridType,
     
     //(vertex, index, len_indices)
     solid_buffers: Vec<(wgpu::Buffer, wgpu::Buffer, u32)>,

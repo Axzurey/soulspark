@@ -1,8 +1,10 @@
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock};
+use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{mpsc, Arc, RwLock};
 
 use blocks::stoneblock::StoneBlock;
 use cgmath::{Point3, Vector3};
+use engine::surfacevertex::SurfaceVertex;
 use gen::primitive::PrimitiveBuilder;
 use gui::elements::slider::Slider;
 use gui::elements::table::Table;
@@ -15,7 +17,8 @@ use pollster::FutureExt;
 use state::workspace::Workspace;
 use stopwatch::Stopwatch;
 use util::inputservice::{InputService, MouseLockState};
-use vox::chunk::xz_to_index;
+use vox::chunk::{xz_to_index, ChunkGridType};
+use vox::chunk_manager::mesh_slice_arrayed;
 use vox::chunkactionqueue::ChunkAction;
 use vox::structure_loader::load_structures;
 use winit::event::{DeviceEvent, Event, KeyEvent, WindowEvent};
@@ -118,40 +121,25 @@ async fn main() {
         println!("HELLO");
     });
 
+    let (chunksend, chunkget): (
+        Sender<(i32, i32, u32, HashMap<u32, ChunkGridType>)>,
+        Receiver<(i32, i32, u32, HashMap<u32, ChunkGridType>)>
+    ) = mpsc::channel();
+
+    let (meshedsend, meshedget): (
+        Sender<(i32, i32, u32, ((Vec<SurfaceVertex>, Vec<u32>, u32), (Vec<SurfaceVertex>, Vec<u32>, u32)))>,
+        Receiver<(i32, i32, u32, ((Vec<SurfaceVertex>, Vec<u32>, u32), (Vec<SurfaceVertex>, Vec<u32>, u32)))>
+    ) = mpsc::channel();
     
     {
-        let workspace = workspace_arc.clone();
         let chunk_update_thread = std::thread::spawn(move || {
-            loop {
-                let mut write = workspace.write().unwrap();
+            println!("IN");
+            while let Ok((chunk_x, chunk_z, y_slice, chunks)) = chunkget.recv() {
+                let result = mesh_slice_arrayed(chunk_x, chunk_z, y_slice, &chunks);
 
-                let queue = &mut write.chunk_manager.action_queue;
-
-                loop {
-                    let _action = queue.get_next_action();
-
-                    if _action.is_none() {break}
-
-                    let action = _action.unwrap();
-
-                    match action {
-                        ChunkAction::UpdateChunkMesh(p) => {
-                            let ind = xz_to_index(p.x, p.z);
-                            let mesh = self.mesh_slice(device, self.chunks.get(&ind).unwrap(), p.y as u32);
-        
-                            let chunk = self.chunks.get_mut(&ind).unwrap();
-                            
-                            chunk.set_solid_buffer(p.y as u32, mesh.0);
-                            chunk.set_transparent_buffer(p.y as u32, mesh.1);
-                        },
-                        ChunkAction::UpdateChunkLighting(p) => {
-                            let ind = xz_to_index(p.x, p.y);
-                            self.flood_lights(ind);
-                        },
-                        _ => {panic!("{:?} in wrong queue(update)", u)}
-                    }
-                }
+                meshedsend.send((chunk_x, chunk_z, y_slice, result)).unwrap();
             }
+            println!("OUT");
         });
     }
 
@@ -233,8 +221,12 @@ async fn main() {
                                 let dt = now - last_update;
                                 last_update = now;
                                 gamewindow.on_next_frame(&mut workspace, dt.as_secs_f32());
-                                workspace.chunk_manager.on_frame_action(&gamewindow.device);
+                                workspace.chunk_manager.on_frame_action(&gamewindow.device, &chunksend);
                                 workspace.input_service.update();
+
+                                if let Ok(res) = meshedget.try_recv() {
+                                    workspace.chunk_manager.finalize_mesh(res.0, res.1, res.2, &gamewindow.device, res.3);
+                                }
                             }
                         }
                         _ => {}
