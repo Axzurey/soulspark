@@ -18,7 +18,7 @@ use pollster::FutureExt;
 use state::workspace::Workspace;
 use stopwatch::Stopwatch;
 use util::inputservice::{InputService, MouseLockState};
-use vox::chunk::{xz_to_index, ChunkGridType};
+use vox::chunk::{xz_to_index, Chunk, ChunkGridType};
 use vox::chunk_manager::mesh_slice_arrayed;
 use vox::chunkactionqueue::ChunkAction;
 use vox::structure_loader::load_structures;
@@ -128,8 +128,8 @@ async fn main() {
     });
 
     let (chunksend, chunkget): (
-        Sender<(i32, i32, u32, HashMap<u32, ChunkGridType>)>,
-        Receiver<(i32, i32, u32, HashMap<u32, ChunkGridType>)>
+        Sender<(i32, i32, u32, HashMap<u32, Arc<RwLock<Chunk>>>)>,
+        Receiver<(i32, i32, u32, HashMap<u32, Arc<RwLock<Chunk>>>)>
     ) = mpsc::channel();
 
     let (meshedsend, meshedget): (
@@ -141,8 +141,9 @@ async fn main() {
         let chunk_update_thread = std::thread::spawn(move || {
             println!("IN");
             while let Ok((chunk_x, chunk_z, y_slice, chunks)) = chunkget.recv() {
+                let t = Stopwatch::start_new();
                 let result = mesh_slice_arrayed(chunk_x, chunk_z, y_slice, &chunks);
-
+                println!("Meshed {}ms", t.elapsed_ms());
                 meshedsend.send((chunk_x, chunk_z, y_slice, result)).unwrap();
             }
             println!("OUT");
@@ -231,10 +232,15 @@ async fn main() {
                                 workspace.input_service.update();
 
                                 
-                                if let Ok(res) = meshedget.try_recv() {
-                                    let t = Stopwatch::start_new();
-                                    workspace.chunk_manager.finalize_mesh(res.0, res.1, res.2, &gamewindow.device, res.3);
-                                    println!("{}", t);
+                                for i in 0..15 {
+                                    if let Ok(res) = meshedget.try_recv() {
+                                        let t = Stopwatch::start_new();
+                                        workspace.chunk_manager.finalize_mesh(res.0, res.1, res.2, &gamewindow.device, res.3);
+                                        println!("Mesh time{}", t.elapsed_ms());
+                                    }
+                                    else {
+                                        break;
+                                    }
                                 }
                             }
                         }

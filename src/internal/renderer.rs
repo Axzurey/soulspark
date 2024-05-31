@@ -1,11 +1,11 @@
-use std::{mem::{self, size_of}, sync::{Arc, RwLock}};
+use std::{mem::{self, size_of}, sync::{Arc, RwLock, RwLockReadGuard}};
 
 use cgmath::{Matrix3, Matrix4, Point3, SquareMatrix};
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use stopwatch::Stopwatch;
 use wgpu::{util::DeviceExt, BindGroupLayout, RenderPipeline, TextureFormat};
 
-use crate::{engine::{surfacevertex::SurfaceVertex, texture::Texture, texture_loader::{initialize_load_textures, preload_textures}, vertex::{ModelVertex, Vertex}}, gen::{object::RawObject, spotlight::{RawSpotLight, Spotlight}}, state::workspace::Workspace, vox::chunk::ChunkDataVertex};
+use crate::{engine::{surfacevertex::SurfaceVertex, texture::Texture, texture_loader::{initialize_load_textures, preload_textures}, vertex::{ModelVertex, Vertex}}, gen::{object::RawObject, spotlight::{RawSpotLight, Spotlight}}, state::workspace::Workspace, vox::chunk::{Chunk, ChunkDataVertex}};
 
 use super::{renderpipeline::create_render_pipeline, renderstorage::RenderStorage};
 
@@ -299,225 +299,225 @@ impl MainRenderer {
         camera_bindgroup: &wgpu::BindGroup,
         workspace: &Workspace
     ) {
-        let frame_start = Stopwatch::start_new();
-        let spotlight_raws: Vec<RawSpotLight> = self.spotlights.par_iter().map(|v| v.read().unwrap().get_raw().clone()).collect();
+        // let frame_start = Stopwatch::start_new();
+        // let spotlight_raws: Vec<RawSpotLight> = self.spotlights.par_iter().map(|v| v.read().unwrap().get_raw().clone()).collect();
 
-        let spotlight_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("object buffer"),
-            contents: bytemuck::cast_slice(&spotlight_raws),
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC
-        });
+        // let spotlight_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        //     label: Some("object buffer"),
+        //     contents: bytemuck::cast_slice(&spotlight_raws),
+        //     usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC
+        // });
 
-        let empty_shadows_bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("empty shadow bindgroup"),
-            layout: &self.shadow_prebindgroup_layout,
-            entries: &[]
-        });
+        // let empty_shadows_bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        //     label: Some("empty shadow bindgroup"),
+        //     layout: &self.shadow_prebindgroup_layout,
+        //     entries: &[]
+        // });
 
-        let shadows_bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("shadow bindgroup"),
-            layout: &self.shadow_bindgroup_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: spotlight_buffer.as_entire_binding()
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&self.shadow_texture.view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.shadow_texture.sampler),
-                },
-            ]
-        });
+        // let shadows_bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        //     label: Some("shadow bindgroup"),
+        //     layout: &self.shadow_bindgroup_layout,
+        //     entries: &[
+        //         wgpu::BindGroupEntry {
+        //             binding: 0,
+        //             resource: spotlight_buffer.as_entire_binding()
+        //         },
+        //         wgpu::BindGroupEntry {
+        //             binding: 1,
+        //             resource: wgpu::BindingResource::TextureView(&self.shadow_texture.view),
+        //         },
+        //         wgpu::BindGroupEntry {
+        //             binding: 2,
+        //             resource: wgpu::BindingResource::Sampler(&self.shadow_texture.sampler),
+        //         },
+        //     ]
+        // });
 
-        let mut buffers: Vec<wgpu::Buffer> = Vec::new();
+        // let mut buffers: Vec<wgpu::Buffer> = Vec::new();
 
-        for obj in self.render_storage.get_objects() {
-            let raw = vec![obj.get_raw().clone()];
+        // for obj in self.render_storage.get_objects() {
+        //     let raw = vec![obj.get_raw().clone()];
             
-            let obj_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("some object buffer"),
-                contents: bytemuck::cast_slice(&raw),
-                usage: wgpu::BufferUsages::VERTEX
-            });
+        //     let obj_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        //         label: Some("some object buffer"),
+        //         contents: bytemuck::cast_slice(&raw),
+        //         usage: wgpu::BufferUsages::VERTEX
+        //     });
 
-            buffers.push(obj_buffer); //can't have both a mutable and immutable reference at the same time :(
-        }
-        let mut index = 0;
+        //     buffers.push(obj_buffer); //can't have both a mutable and immutable reference at the same time :(
+        // }
+        // let mut index = 0;
 
-        let default_object_buffer = {
-            let raw = vec![RawObject {
-                model: Matrix4::identity().into(),
-                normal: Matrix3::identity().into()
-            }];
+        // let default_object_buffer = {
+        //     let raw = vec![RawObject {
+        //         model: Matrix4::identity().into(),
+        //         normal: Matrix3::identity().into()
+        //     }];
 
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("default object buffer"),
-                contents: bytemuck::cast_slice(&raw),
-                usage: wgpu::BufferUsages::VERTEX
-            })
-        };
+        //     device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        //         label: Some("default object buffer"),
+        //         contents: bytemuck::cast_slice(&raw),
+        //         usage: wgpu::BufferUsages::VERTEX
+        //     })
+        // };
 
-        for light in &self.spotlights {
+        // for light in &self.spotlights {
 
-            let read = light.read().unwrap();
+        //     let read = light.read().unwrap();
 
-            self.globals.current_light_model = read.get_raw().model;
+        //     self.globals.current_light_model = read.get_raw().model;
 
-            let global_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("Camera Buffer"),
-                contents: bytemuck::cast_slice(&[self.globals]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST
-            });
+        //     let global_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        //         label: Some("Camera Buffer"),
+        //         contents: bytemuck::cast_slice(&[self.globals]),
+        //         usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST
+        //     });
     
-            let global_bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                layout: &self.global_bindgroup_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: global_buffer.as_entire_binding()
-                    },
-                ],
-                label: Some("Camera bind group :)")
-            });
+        //     let global_bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        //         layout: &self.global_bindgroup_layout,
+        //         entries: &[
+        //             wgpu::BindGroupEntry {
+        //                 binding: 0,
+        //                 resource: global_buffer.as_entire_binding()
+        //             },
+        //         ],
+        //         label: Some("Camera bind group :)")
+        //     });
 
-            let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("shadow render pass"),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(
-                    wgpu::RenderPassDepthStencilAttachment {
-                        view: &read.texture_view,
-                        depth_ops: Some(
-                            wgpu::Operations {
-                                load: wgpu::LoadOp::Clear(1.0),
-                                store: wgpu::StoreOp::Store
-                            }
-                        ),
-                        stencil_ops: None,
-                    }
-                ),
-                timestamp_writes: None,
-                occlusion_query_set: None
-            });
+        //     let mut shadow_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        //         label: Some("shadow render pass"),
+        //         color_attachments: &[],
+        //         depth_stencil_attachment: Some(
+        //             wgpu::RenderPassDepthStencilAttachment {
+        //                 view: &read.texture_view,
+        //                 depth_ops: Some(
+        //                     wgpu::Operations {
+        //                         load: wgpu::LoadOp::Clear(1.0),
+        //                         store: wgpu::StoreOp::Store
+        //                     }
+        //                 ),
+        //                 stencil_ops: None,
+        //             }
+        //         ),
+        //         timestamp_writes: None,
+        //         occlusion_query_set: None
+        //     });
     
-            shadow_pass.set_pipeline(&self.shadow_pipeline);
-            shadow_pass.set_bind_group(0, &self.texture_bindgroup, &[]);
-            shadow_pass.set_bind_group(1, camera_bindgroup, &[]);
-            shadow_pass.set_bind_group(2, &global_bindgroup, &[]);
-            shadow_pass.set_bind_group(3, &empty_shadows_bindgroup, &[]);
+        //     shadow_pass.set_pipeline(&self.shadow_pipeline);
+        //     shadow_pass.set_bind_group(0, &self.texture_bindgroup, &[]);
+        //     shadow_pass.set_bind_group(1, camera_bindgroup, &[]);
+        //     shadow_pass.set_bind_group(2, &global_bindgroup, &[]);
+        //     shadow_pass.set_bind_group(3, &empty_shadows_bindgroup, &[]);
 
-            let mut i = 0;
+        //     let mut i = 0;
 
-            for obj in self.render_storage.get_objects() {
-                let model = obj.get_model();
+        //     for obj in self.render_storage.get_objects() {
+        //         let model = obj.get_model();
     
-                for mesh in &model.meshes {
-                    shadow_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    shadow_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                    shadow_pass.set_vertex_buffer(1, buffers[i].slice(..));
-                    shadow_pass.draw_indexed(0..mesh.num_elements, 0, 0..1);
-                }
-                i += 1;
-            }
+        //         for mesh in &model.meshes {
+        //             shadow_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        //             shadow_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+        //             shadow_pass.set_vertex_buffer(1, buffers[i].slice(..));
+        //             shadow_pass.draw_indexed(0..mesh.num_elements, 0, 0..1);
+        //         }
+        //         i += 1;
+        //     }
 
-            for (index, chunk) in workspace.chunk_manager.chunks.iter() {
-                let out = chunk.get_solid_buffers();
+        //     for (index, chunk) in workspace.chunk_manager.chunks.iter() {
+        //         let out = chunk.get_solid_buffers();
 
-                for (vertex_buffer, index_buffer, ilen) in out {
-                    if *ilen == 0 {continue};
-                    shadow_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    shadow_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                    shadow_pass.set_vertex_buffer(1, default_object_buffer.slice(..));
-                    shadow_pass.draw_indexed(0..*ilen, 0, 0..1);
-                }
-            }
+        //         for (vertex_buffer, index_buffer, ilen) in out {
+        //             if *ilen == 0 {continue};
+        //             shadow_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        //             shadow_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        //             shadow_pass.set_vertex_buffer(1, default_object_buffer.slice(..));
+        //             shadow_pass.draw_indexed(0..*ilen, 0, 0..1);
+        //         }
+        //     }
     
-            drop(shadow_pass);
-            index += 1;
-        }
+        //     drop(shadow_pass);
+        //     index += 1;
+        // }
 
-        let global_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera Buffer"),
-            contents: bytemuck::cast_slice(&[self.globals]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST
-        });
+        // let global_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        //     label: Some("Camera Buffer"),
+        //     contents: bytemuck::cast_slice(&[self.globals]),
+        //     usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST
+        // });
 
-        let global_bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &self.global_bindgroup_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: global_buffer.as_entire_binding()
-                },
-            ],
-            label: Some("Camera bind group :)")
-        });
+        // let global_bindgroup = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        //     layout: &self.global_bindgroup_layout,
+        //     entries: &[
+        //         wgpu::BindGroupEntry {
+        //             binding: 0,
+        //             resource: global_buffer.as_entire_binding()
+        //         },
+        //     ],
+        //     label: Some("Camera bind group :)")
+        // });
 
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("object render pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment { 
-                view: &output_view, 
-                resolve_target: None, 
-                ops: wgpu::Operations { 
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.1,
-                        g: 0.2,
-                        b: 0.3,
-                        a: 1.0
-                    }),
-                    store: wgpu::StoreOp::Store
-                }
-            })],
-            depth_stencil_attachment: Some(
-                wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture.view,
-                    depth_ops: Some(
-                        wgpu::Operations {
-                            load: wgpu::LoadOp::Clear(1.0),
-                            store: wgpu::StoreOp::Discard
-                        }
-                    ),
-                    stencil_ops: None,
-                }
-            ),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-        render_pass.set_pipeline(&self.object_pipeline);
-        render_pass.set_bind_group(0, &self.texture_bindgroup, &[]);
-        render_pass.set_bind_group(1, camera_bindgroup, &[]);
-        render_pass.set_bind_group(2, &global_bindgroup, &[]);
-        render_pass.set_bind_group(3, &shadows_bindgroup, &[]);
+        // let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+        //     label: Some("object render pass"),
+        //     color_attachments: &[Some(wgpu::RenderPassColorAttachment { 
+        //         view: &output_view, 
+        //         resolve_target: None, 
+        //         ops: wgpu::Operations { 
+        //             load: wgpu::LoadOp::Clear(wgpu::Color {
+        //                 r: 0.1,
+        //                 g: 0.2,
+        //                 b: 0.3,
+        //                 a: 1.0
+        //             }),
+        //             store: wgpu::StoreOp::Store
+        //         }
+        //     })],
+        //     depth_stencil_attachment: Some(
+        //         wgpu::RenderPassDepthStencilAttachment {
+        //             view: &self.depth_texture.view,
+        //             depth_ops: Some(
+        //                 wgpu::Operations {
+        //                     load: wgpu::LoadOp::Clear(1.0),
+        //                     store: wgpu::StoreOp::Discard
+        //                 }
+        //             ),
+        //             stencil_ops: None,
+        //         }
+        //     ),
+        //     timestamp_writes: None,
+        //     occlusion_query_set: None,
+        // });
+        // render_pass.set_pipeline(&self.object_pipeline);
+        // render_pass.set_bind_group(0, &self.texture_bindgroup, &[]);
+        // render_pass.set_bind_group(1, camera_bindgroup, &[]);
+        // render_pass.set_bind_group(2, &global_bindgroup, &[]);
+        // render_pass.set_bind_group(3, &shadows_bindgroup, &[]);
 
-        let mut i = 0;
+        // let mut i = 0;
 
-        for obj in self.render_storage.get_objects() {
-            let model = obj.get_model();
+        // for obj in self.render_storage.get_objects() {
+        //     let model = obj.get_model();
 
-            for mesh in &model.meshes {
-                render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
-                render_pass.set_vertex_buffer(1, buffers[i].slice(..));
-                render_pass.draw_indexed(0..mesh.num_elements, 0, 0..1);
-            }
-            i += 1;
-        }
+        //     for mesh in &model.meshes {
+        //         render_pass.set_index_buffer(mesh.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        //         render_pass.set_vertex_buffer(0, mesh.vertex_buffer.slice(..));
+        //         render_pass.set_vertex_buffer(1, buffers[i].slice(..));
+        //         render_pass.draw_indexed(0..mesh.num_elements, 0, 0..1);
+        //     }
+        //     i += 1;
+        // }
 
-        for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
-            let out = chunk.get_solid_buffers();
+        // for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
+        //     let out = chunk.get_solid_buffers();
 
-            for (vertex_buffer, index_buffer, ilen) in out {
-                if *ilen == 0 {continue};
-                render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                render_pass.set_vertex_buffer(1, default_object_buffer.slice(..));
-                render_pass.draw_indexed(0..*ilen, 0, 0..1);
-            }
-        }
-        println!("Frame took {}ms", frame_start.elapsed_ms());
+        //     for (vertex_buffer, index_buffer, ilen) in out {
+        //         if *ilen == 0 {continue};
+        //         render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        //         render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        //         render_pass.set_vertex_buffer(1, default_object_buffer.slice(..));
+        //         render_pass.draw_indexed(0..*ilen, 0, 0..1);
+        //     }
+        // }
+        // println!("Frame took {}ms", frame_start.elapsed_ms());
     }
 
     pub fn render_surface(&mut self, 
@@ -530,6 +530,8 @@ impl MainRenderer {
         workspace: &Workspace
     ) {
         let t = Stopwatch::start_new();
+        let mut locks: Vec<RwLockReadGuard<Chunk>> = Vec::new();
+        
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("object render pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment { 
@@ -565,7 +567,14 @@ impl MainRenderer {
         render_pass.set_bind_group(1, camera_bindgroup, &[]);
 
         for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
-            let out = chunk.get_solid_buffers();
+            let read = chunk.read().unwrap();
+            locks.push(read);
+        }
+
+        let mut outeri = 0;
+        for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
+            let read = &locks[outeri];
+            let out = read.get_solid_buffers();
 
             let mut i = 0;
 
@@ -577,13 +586,16 @@ impl MainRenderer {
                 
                 render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                render_pass.set_vertex_buffer(1, chunk.slice_vertex_buffers[i].slice(..));
+                render_pass.set_vertex_buffer(1, read.slice_vertex_buffers[i].slice(..));
                 render_pass.draw_indexed(0..*ilen, 0, 0..1);
 
                 i += 1;
             }
+            outeri += 1;
         }
         drop(render_pass);
+
+        let mut locks: Vec<RwLockReadGuard<Chunk>> = Vec::new();
 
         let mut transparency_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("transparent render pass"),
@@ -611,7 +623,15 @@ impl MainRenderer {
         transparency_render_pass.set_bind_group(1, camera_bindgroup, &[]);
 
         for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
-            let out = chunk.get_transparent_buffers();
+            let read = chunk.read().unwrap();
+            locks.push(read);
+        }
+        
+        let mut outeri = 0;
+        for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
+            let read = &locks[outeri];
+
+            let out = read.get_transparent_buffers();
 
             let mut i = 0;
 
@@ -623,11 +643,12 @@ impl MainRenderer {
                 
                 transparency_render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 transparency_render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                transparency_render_pass.set_vertex_buffer(1, chunk.slice_vertex_buffers[i].slice(..));
+                transparency_render_pass.set_vertex_buffer(1, read.slice_vertex_buffers[i].slice(..));
                 transparency_render_pass.draw_indexed(0..*ilen, 0, 0..1);
 
                 i += 1;
             }
+            outeri += 1;
         }
         drop(transparency_render_pass);
         //println!("frame: {}ms", t.elapsed_ms());

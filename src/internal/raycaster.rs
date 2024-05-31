@@ -2,8 +2,8 @@ use cgmath::Vector3;
 
 use crate::{blocks::{airblock::AirBlock, block::{Block, Blocks}}, vox::chunk_manager::{get_block_at_absolute, ChunkManager}};
 
-pub struct BlockRaycastResult<'a> {
-    pub hit: &'a Box<dyn Block + Send + Sync>,
+pub struct BlockRaycastResult {
+    pub hit: Box<dyn Block + Send + Sync>,
     pub normal: Vector3<i32>,
     pub position: Vector3<f32>
 }
@@ -61,7 +61,7 @@ pub fn raycast_blocks<I>(from: Vector3<f32>, direction: Vector3<f32>, distance: 
         match block.clone() {
             Some(b) => {
                 if b.get_block() != Blocks::AIR {
-                    if !ignore(b) {
+                    if !ignore(&b) {
                         //println!("{:?}, \n{:?}", from + direction * traversed, Vector3::new(x, y, z));
                         return Some(BlockRaycastResult {
                             hit: b,

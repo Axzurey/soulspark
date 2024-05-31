@@ -12,7 +12,7 @@ use crate::{blocks::{airblock::AirBlock, block::{calculate_illumination_bytes, B
 use super::{chunk::{local_xyz_to_index, xz_to_index, Chunk, ChunkGridType}, chunkactionqueue::ChunkActionQueue};
 
 pub struct ChunkManager {
-    pub chunks: HashMap<u32, Chunk>,
+    pub chunks: HashMap<u32, Arc<RwLock<Chunk>>>,
     render_distance: u32,
     seed: u32,
     noise_gen: Perlin,
@@ -21,28 +21,18 @@ pub struct ChunkManager {
     extra_blocks: HashMap<u32, Vec<BlockType>>
 }
 
-pub fn get_block_at_absolute(x: i32, y: i32, z: i32, chunks: &HashMap<u32, Chunk>) -> Option<&BlockType> {
+pub fn get_block_at_absolute(x: i32, y: i32, z: i32, chunks: &HashMap<u32, Arc<RwLock<Chunk>>>) -> Option<BlockType> {
     if y < 0 || y > 255 {return None};
     let chunk_x = x.div_euclid(16);
     let chunk_z = z.div_euclid(16);
 
-    let chunk = chunks.get(&xz_to_index(chunk_x, chunk_z))?;
+    let chunk = chunks.get(&xz_to_index(chunk_x, chunk_z))?.read().unwrap();
 
-    Some(chunk.get_block_at(x as u32, y as u32, z as u32))
+    Some(chunk.get_block_at(x.rem_euclid(16) as u32, y as u32, z.rem_euclid(16) as u32).clone())
 }
 
-pub fn get_block_at_absolute_arrayed(x: i32, y: i32, z: i32, chunks: &HashMap<u32, ChunkGridType>) -> Option<&BlockType> {
-    if y < 0 || y > 255 {return None};
-    let chunk_x = x.div_euclid(16);
-    let chunk_z = z.div_euclid(16);
-
-    let chunk = chunks.get(&xz_to_index(chunk_x, chunk_z))?;
-
-    Some(&chunk[(y / 16) as usize][local_xyz_to_index(x.rem_euclid(16) as u32, y.rem_euclid(16) as u32, z.rem_euclid(16) as u32) as usize])
-}
-
-pub fn mesh_slice_arrayed(chunk_x: i32, chunk_z: i32, y_slice: u32, chunks: &HashMap<u32, ChunkGridType>) -> ((Vec<SurfaceVertex>, Vec<u32>, u32), (Vec<SurfaceVertex>, Vec<u32>, u32)) {
-    let chunk = &chunks[&xz_to_index(chunk_x, chunk_z)];
+pub fn mesh_slice_arrayed(chunk_x: i32, chunk_z: i32, y_slice: u32, chunks: &HashMap<u32, Arc<RwLock<Chunk>>>) -> ((Vec<SurfaceVertex>, Vec<u32>, u32), (Vec<SurfaceVertex>, Vec<u32>, u32)) {
+    //let chunk = &chunks[&xz_to_index(chunk_x, chunk_z)].read().unwrap();
     
     let mut vertices: Vec<SurfaceVertex> = Vec::with_capacity(16 * 16 * 16 * 6 * 4);
     let mut indices: Vec<u32> = Vec::with_capacity(16 * 16 * 16 * 6 * 6);
@@ -60,21 +50,21 @@ pub fn mesh_slice_arrayed(chunk_x: i32, chunk_z: i32, y_slice: u32, chunks: &Has
 
             for yt in y_start..y_end {
                 let y = yt % 16;
-                let block_at = &chunk[(yt / 16) as usize][local_xyz_to_index(x, y, z) as usize];
+                let block_at = get_block_at_absolute(abs_x, yt as i32, abs_z, chunks).unwrap();//&chunk.grid[(yt / 16) as usize][local_xyz_to_index(x, y, z) as usize];
 
                 if !block_at.does_mesh() || block_at.get_block() == Blocks::AIR {
                     continue;
                 }
 
-                let illumination = calculate_illumination_bytes(block_at);
+                let illumination = calculate_illumination_bytes(&block_at);
 
                 let neighbors = [
-                    get_block_at_absolute_arrayed(abs_x, yt as i32, abs_z + 1, &chunks),
-                    get_block_at_absolute_arrayed(abs_x, yt as i32, abs_z - 1, &chunks),
-                    get_block_at_absolute_arrayed(abs_x + 1, yt as i32, abs_z, &chunks),
-                    get_block_at_absolute_arrayed(abs_x - 1, yt as i32, abs_z, &chunks),
-                    get_block_at_absolute_arrayed(abs_x, yt as i32 + 1, abs_z, &chunks),
-                    get_block_at_absolute_arrayed(abs_x, yt as i32 - 1, abs_z, &chunks),
+                    get_block_at_absolute(abs_x, yt as i32, abs_z + 1, &chunks),
+                    get_block_at_absolute(abs_x, yt as i32, abs_z - 1, &chunks),
+                    get_block_at_absolute(abs_x + 1, yt as i32, abs_z, &chunks),
+                    get_block_at_absolute(abs_x - 1, yt as i32, abs_z, &chunks),
+                    get_block_at_absolute(abs_x, yt as i32 + 1, abs_z, &chunks),
+                    get_block_at_absolute(abs_x, yt as i32 - 1, abs_z, &chunks),
                 ];
 
                 let faces = [
@@ -207,7 +197,7 @@ impl ChunkManager {
         }
     }
 
-    pub fn on_frame_action(&mut self, device: &wgpu::Device, chunk_send: &Sender<(i32, i32, u32, HashMap<u32, ChunkGridType>)>) {
+    pub fn on_frame_action(&mut self, device: &wgpu::Device, chunk_send: &Sender<(i32, i32, u32, HashMap<u32, Arc<RwLock<Chunk>>>)>) {
         const MAX_ACTIONS: u32 = 15;
         for _ in 0..MAX_ACTIONS {
             let res = self.action_queue.get_next_action();
@@ -225,7 +215,7 @@ impl ChunkManager {
             }
         }
         
-        const MAX_UPDATES: u32 = 2; //pretty good number for most devices? probably?
+        const MAX_UPDATES: u32 = 45; //pretty good number for most devices? probably?
         
         for _ in 0..MAX_UPDATES {
             let res = self.update_queue.get_next_action();
@@ -235,28 +225,7 @@ impl ChunkManager {
 
             match u {
                 ChunkAction::UpdateChunkMesh(p) => {
-                    let t = Stopwatch::start_new();
-                    let mut chunks = HashMap::new();
-                    (p.x - 1..=p.x + 1).for_each(|x| {
-                        (p.z - 1..=p.z + 1).for_each(|z| {
-                            let xz = xz_to_index(x, z);
-                            let chunk = self.chunks.get(&xz);
-                            if chunk.is_none() {return};
-                            chunks.insert(xz, chunk.unwrap().grid.clone());
-                        });
-                    });
-
-                    println!("MS: {}", t.elapsed_ms());
-
-                    chunk_send.send((p.x, p.z, p.y as u32, chunks)).unwrap();
-
-                    // let ind = xz_to_index(p.x, p.z);
-                    // let mesh = self.mesh_slice(device, self.chunks.get(&ind).unwrap(), p.y as u32);
-
-                    // let chunk = self.chunks.get_mut(&ind).unwrap();
-                    
-                    // chunk.set_solid_buffer(p.y as u32, mesh.0);
-                    // chunk.set_transparent_buffer(p.y as u32, mesh.1);
+                    chunk_send.send((p.x, p.z, p.y as u32, self.chunks.clone())).unwrap();
                 },
                 ChunkAction::UpdateChunkLighting(p) => {
                     let ind = xz_to_index(p.x, p.y);
@@ -272,7 +241,7 @@ impl ChunkManager {
         let t = Stopwatch::start_new();
         for x in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
             for z in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
-                let chunk = Chunk::new(device, Vector2::new(x, z), self.noise_gen, &mut self.extra_blocks);
+                let chunk = Arc::new(RwLock::new(Chunk::new(device, Vector2::new(x, z), self.noise_gen, &mut self.extra_blocks)));
                 self.chunks.insert(xz_to_index(x, z), chunk);
             }
         }
@@ -469,19 +438,19 @@ impl ChunkManager {
         ((vertex_buffer, index_buffer, ilen), ((vertex_buffer_t, index_buffer_t, ilen_t)))
     }
 
-    pub fn get_block_at_absolute(&self, x: i32, y: i32, z: i32) -> Option<&BlockType> {
+    pub fn get_block_at_absolute(&self, x: i32, y: i32, z: i32) -> Option<BlockType> {
         if y < 0 || y > 255 {return None};
         let chunk_x = x.div_euclid(16);
         let chunk_z = z.div_euclid(16);
 
         let chunk = self.chunks.get(&xz_to_index(chunk_x, chunk_z))?;
 
-        Some(chunk.get_block_at(x as u32, y as u32, z as u32))
+        Some(chunk.read().unwrap().get_block_at(x as u32, y as u32, z as u32).clone())
     }
 
     pub fn break_block(&mut self, device: &wgpu::Device, x: i32, y: u32, z: i32) {
         let index = xz_to_index(x.div_euclid(16), z.div_euclid(16));
-        let chunk = self.chunks.get_mut(&index).unwrap();
+        let mut chunk = self.chunks.get_mut(&index).unwrap().write().unwrap();
 
         let xrem = x.rem_euclid(16) as u32;
         let zrem = z.rem_euclid(16) as u32;
@@ -503,10 +472,10 @@ impl ChunkManager {
         //gets the adjacent chunks, including itself :)
         let mut requires_meshing = (xd - 1..=xd + 1).map(|x| {
             (zd - 1..=zd + 1).map(move |z| {
-                (0..16).map(move |y| {
+                let cond = xd == x && zd == z;
+                (if cond {yd - 1} else {0}..=if cond {yd + 1} else {15}).map(move |y| {
                     Vector3::new(x as f32, y as f32, z as f32)
                 })
-                
             }).flatten()
         }).flatten().collect::<Vec<Vector3<f32>>>();
 
@@ -516,13 +485,15 @@ impl ChunkManager {
             })
         }).flatten();
 
+        drop(chunk);
+
         requires_meshing_light.for_each(|v| {
             let index = xz_to_index(v.0, v.1);
 
             let chunk = self.chunks.get(&index);
             if chunk.is_none() {return};
 
-            self.update_queue.update_chunk_lighting(Vector2::new(v.0, v.1));
+            //self.update_queue.update_chunk_lighting(Vector2::new(v.0, v.1));
         });
 
         let xyz: Vector3<f32> = Vector3::new(
@@ -545,7 +516,7 @@ impl ChunkManager {
 
         let local = block.get_relative_position();
 
-        let chunk = self.chunks.get_mut(&index).unwrap();
+        let mut chunk = self.chunks.get_mut(&index).unwrap().write().unwrap();
 
         chunk.grid[(abs.y / 16) as usize][local_xyz_to_index(local.x, local.y, local.z) as usize] = block;
 
@@ -568,6 +539,8 @@ impl ChunkManager {
                 (x, z)
             })
         }).flatten();
+
+        drop(chunk);
 
         requires_meshing_light.for_each(|v| {
             let index = xz_to_index(v.0, v.1);
@@ -592,7 +565,8 @@ impl ChunkManager {
     }
 
     pub fn flood_lights(&mut self, chunk_index: u32) {
-        let chunk = self.chunks.get_mut(&chunk_index).unwrap();
+
+        let mut chunk = self.chunks.get_mut(&chunk_index).unwrap().write().unwrap();
         for x in 0..16 {
             for z in 0..16 {
                 let mut initial_height = 1000; //safe value
@@ -640,6 +614,7 @@ impl ChunkManager {
         //         }
         //     }
         // }
+
     }
 
     pub fn finalize_mesh(&mut self, x: i32, z: i32, slice: u32, device: &wgpu::Device, data: ((Vec<SurfaceVertex>, Vec<u32>, u32), (Vec<SurfaceVertex>, Vec<u32>, u32))) {
@@ -669,7 +644,7 @@ impl ChunkManager {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let chunk = self.chunks.get_mut(&xz_to_index(x, z)).unwrap();
+        let mut chunk = self.chunks.get_mut(&xz_to_index(x, z)).unwrap().write().unwrap();
 
         chunk.set_solid_buffer(slice, (vertex_buffer, index_buffer, ilen));
         chunk.set_transparent_buffer(slice, (vertex_buffer_t, index_buffer_t, ilen_t));
@@ -677,7 +652,7 @@ impl ChunkManager {
     }
 
     pub fn mesh_chunk(&mut self, device: &wgpu::Device, index: u32) {
-        let chunk = self.chunks.get(&index).unwrap();
+        let chunk = self.chunks.get(&index).unwrap().read().unwrap();
 
         let slices = (0..16).into_iter();
         
@@ -685,12 +660,14 @@ impl ChunkManager {
         let mut v1: Vec<(wgpu::Buffer, wgpu::Buffer, u32)> = Vec::new();
 
         slices.for_each(|s| {
-            let out = self.mesh_slice(device, chunk, s);
+            let out = self.mesh_slice(device, &chunk, s);
             v0.push(out.0);
             v1.push(out.1);
         });
 
-        let rechunk = self.chunks.get_mut(&index).unwrap();
+        drop(chunk);
+
+        let mut rechunk = self.chunks.get_mut(&index).unwrap().write().unwrap();
         
         rechunk.set_solid_buffers(v0);
         rechunk.set_transparent_buffers(v1);
