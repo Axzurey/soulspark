@@ -139,14 +139,12 @@ async fn main() {
     
     {
         let chunk_update_thread = std::thread::spawn(move || {
-            println!("IN");
             while let Ok((chunk_x, chunk_z, y_slice, chunks)) = chunkget.recv() {
                 let t = Stopwatch::start_new();
                 let result = mesh_slice_arrayed(chunk_x, chunk_z, y_slice, &chunks);
                 println!("Meshed {}ms", t.elapsed_ms());
                 meshedsend.send((chunk_x, chunk_z, y_slice, result)).unwrap();
             }
-            println!("OUT");
         });
     }
 
@@ -224,6 +222,7 @@ async fn main() {
                         },
                         WindowEvent::RedrawRequested => {
                             if window_id == window.id() {
+                                
                                 let now = instant::Instant::now();
                                 let dt = now - last_update;
                                 last_update = now;
@@ -234,9 +233,12 @@ async fn main() {
                                 
                                 for i in 0..15 {
                                     if let Ok(res) = meshedget.try_recv() {
-                                        let t = Stopwatch::start_new();
+                                        let at = Vector3::new(res.0, res.2 as i32, res.1);
+                                        let index = workspace.chunk_manager.unresolved_meshes.iter().position(|p| *p == at);
+                                        if let Some(i) = index {
+                                            workspace.chunk_manager.unresolved_meshes.swap_remove(i);
+                                        }
                                         workspace.chunk_manager.finalize_mesh(res.0, res.1, res.2, &gamewindow.device, res.3);
-                                        println!("Mesh time{}", t.elapsed_ms());
                                     }
                                     else {
                                         break;

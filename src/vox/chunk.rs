@@ -7,7 +7,7 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use stopwatch::Stopwatch;
 use wgpu::util::DeviceExt;
 
-use crate::{blocks::{airblock::AirBlock, block::{Block, BlockType, Blocks}, dirtblock::DirtBlock, grassblock::GrassBlock, stoneblock::StoneBlock}, engine::vertex::{ModelVertex, Vertex}, vox::{structure_loader::get_blocks_for_structure_at_point, worldgen::density_map_plane}};
+use crate::{blocks::{airblock::AirBlock, block::{Block, BlockType, Blocks}, dirtblock::DirtBlock, grassblock::GrassBlock, stoneblock::StoneBlock}, engine::vertex::{ModelVertex, Vertex}, vox::{structure_loader::get_blocks_for_structure_at_point, worldgen::{density_map_plane, is_cave}}};
 
 use super::worldgen::generate_surface_height;
 
@@ -77,11 +77,18 @@ impl Chunk {
                     let abs_z = ((z as i32) + position.y * 16) as i32;
 
                     let floor_level = generate_surface_height(noisegen, abs_x, abs_z);
+                    
                     for y in 0..16 {
                         let abs_y = (y + y_slice as u32 * 16) as i32;
-
+                        let is_cave = is_cave(noisegen, abs_x, abs_y, abs_z);
                         let block: BlockType =
-                        if abs_y == floor_level && abs_y < 100 {
+                        if is_cave {
+                            Box::new(AirBlock::new(
+                                Vector3::new(x, y as u32, z), 
+                                Vector3::new(abs_x, abs_y, abs_z))
+                            )
+                        }
+                        else if abs_y == floor_level && abs_y < 100 {
                             Box::new(GrassBlock::new(
                                 Vector3::new(x, y as u32, z), 
                                 Vector3::new(abs_x, abs_y, abs_z))

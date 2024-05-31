@@ -18,10 +18,11 @@ pub struct ChunkManager {
     noise_gen: Perlin,
     pub action_queue: ChunkActionQueue,
     update_queue: ChunkActionQueue,
-    extra_blocks: HashMap<u32, Vec<BlockType>>
+    extra_blocks: HashMap<u32, Vec<BlockType>>,
+    pub unresolved_meshes: Vec<Vector3<i32>>
 }
 
-pub fn get_block_at_absolute(x: i32, y: i32, z: i32, chunks: &HashMap<u32, Arc<RwLock<Chunk>>>) -> Option<BlockType> {
+pub fn get_block_at_absolute_cloned(x: i32, y: i32, z: i32, chunks: &HashMap<u32, Arc<RwLock<Chunk>>>) -> Option<BlockType> {
     if y < 0 || y > 255 {return None};
     let chunk_x = x.div_euclid(16);
     let chunk_z = z.div_euclid(16);
@@ -50,7 +51,7 @@ pub fn mesh_slice_arrayed(chunk_x: i32, chunk_z: i32, y_slice: u32, chunks: &Has
 
             for yt in y_start..y_end {
                 let y = yt % 16;
-                let block_at = get_block_at_absolute(abs_x, yt as i32, abs_z, chunks).unwrap();//&chunk.grid[(yt / 16) as usize][local_xyz_to_index(x, y, z) as usize];
+                let block_at = get_block_at_absolute_cloned(abs_x, yt as i32, abs_z, chunks).unwrap();//&chunk.grid[(yt / 16) as usize][local_xyz_to_index(x, y, z) as usize];
 
                 if !block_at.does_mesh() || block_at.get_block() == Blocks::AIR {
                     continue;
@@ -59,12 +60,12 @@ pub fn mesh_slice_arrayed(chunk_x: i32, chunk_z: i32, y_slice: u32, chunks: &Has
                 let illumination = calculate_illumination_bytes(&block_at);
 
                 let neighbors = [
-                    get_block_at_absolute(abs_x, yt as i32, abs_z + 1, &chunks),
-                    get_block_at_absolute(abs_x, yt as i32, abs_z - 1, &chunks),
-                    get_block_at_absolute(abs_x + 1, yt as i32, abs_z, &chunks),
-                    get_block_at_absolute(abs_x - 1, yt as i32, abs_z, &chunks),
-                    get_block_at_absolute(abs_x, yt as i32 + 1, abs_z, &chunks),
-                    get_block_at_absolute(abs_x, yt as i32 - 1, abs_z, &chunks),
+                    get_block_at_absolute_cloned(abs_x, yt as i32, abs_z + 1, &chunks),
+                    get_block_at_absolute_cloned(abs_x, yt as i32, abs_z - 1, &chunks),
+                    get_block_at_absolute_cloned(abs_x + 1, yt as i32, abs_z, &chunks),
+                    get_block_at_absolute_cloned(abs_x - 1, yt as i32, abs_z, &chunks),
+                    get_block_at_absolute_cloned(abs_x, yt as i32 + 1, abs_z, &chunks),
+                    get_block_at_absolute_cloned(abs_x, yt as i32 - 1, abs_z, &chunks),
                 ];
 
                 let faces = [
@@ -193,6 +194,7 @@ impl ChunkManager {
             noise_gen: Perlin::new(rand::rngs::StdRng::seed_from_u64(52352).next_u32()),
             action_queue: ChunkActionQueue::new(),
             update_queue: ChunkActionQueue::new(),
+            unresolved_meshes: Vec::new(),
             extra_blocks: HashMap::new()
         }
     }
@@ -215,9 +217,9 @@ impl ChunkManager {
             }
         }
         
-        const MAX_UPDATES: u32 = 45; //pretty good number for most devices? probably?
+        let mut remaining_updates: u32 = 3; //lighting updates per frame.(meshing is sent to another chunk)
         
-        for _ in 0..MAX_UPDATES {
+        while remaining_updates > 0 {
             let res = self.update_queue.get_next_action();
             if res.is_none() {break;}
 
@@ -225,11 +227,15 @@ impl ChunkManager {
 
             match u {
                 ChunkAction::UpdateChunkMesh(p) => {
-                    chunk_send.send((p.x, p.z, p.y as u32, self.chunks.clone())).unwrap();
+                    if !self.unresolved_meshes.contains(&p) {
+                        chunk_send.send((p.x, p.z, p.y as u32, self.chunks.clone())).unwrap();
+                        self.unresolved_meshes.push(p);
+                    }
                 },
                 ChunkAction::UpdateChunkLighting(p) => {
                     let ind = xz_to_index(p.x, p.y);
                     self.flood_lights(ind);
+                    remaining_updates -= 1;
                 },
                 _ => {panic!("{:?} in wrong queue(update)", u)}
             }
@@ -298,12 +304,12 @@ impl ChunkManager {
                     let illumination = calculate_illumination_bytes(block_at);
 
                     let neighbors = [
-                        get_block_at_absolute(abs_x, yt as i32, abs_z + 1, &self.chunks),
-                        get_block_at_absolute(abs_x, yt as i32, abs_z - 1, &self.chunks),
-                        get_block_at_absolute(abs_x + 1, yt as i32, abs_z, &self.chunks),
-                        get_block_at_absolute(abs_x - 1, yt as i32, abs_z, &self.chunks),
-                        get_block_at_absolute(abs_x, yt as i32 + 1, abs_z, &self.chunks),
-                        get_block_at_absolute(abs_x, yt as i32 - 1, abs_z, &self.chunks),
+                        get_block_at_absolute_cloned(abs_x, yt as i32, abs_z + 1, &self.chunks),
+                        get_block_at_absolute_cloned(abs_x, yt as i32, abs_z - 1, &self.chunks),
+                        get_block_at_absolute_cloned(abs_x + 1, yt as i32, abs_z, &self.chunks),
+                        get_block_at_absolute_cloned(abs_x - 1, yt as i32, abs_z, &self.chunks),
+                        get_block_at_absolute_cloned(abs_x, yt as i32 + 1, abs_z, &self.chunks),
+                        get_block_at_absolute_cloned(abs_x, yt as i32 - 1, abs_z, &self.chunks),
                     ];
 
                     let faces = [
@@ -493,7 +499,7 @@ impl ChunkManager {
             let chunk = self.chunks.get(&index);
             if chunk.is_none() {return};
 
-            //self.update_queue.update_chunk_lighting(Vector2::new(v.0, v.1));
+            self.update_queue.update_chunk_lighting(Vector2::new(v.0, v.1));
         });
 
         let xyz: Vector3<f32> = Vector3::new(

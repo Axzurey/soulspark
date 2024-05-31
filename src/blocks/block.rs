@@ -87,11 +87,19 @@ pub trait Block {
     fn emissive_color(&self) -> Option<[u8; 3]> {None}
 
     fn get_block(&self) -> Blocks;
+
+    fn copy_into_self(&mut self, other: &BlockType) {
+        self.set_light(*other.get_light());
+        self.set_sunlight_intensity(other.get_sunlight_intensity());
+    }
 }
 
 impl Clone for Box<dyn Block + Send + Sync> {
     fn clone(&self) -> Self {
-        create_block_default(self.get_block(), self.get_absolute_position())
+        let mut v = create_block_default(self.get_block(), self.get_absolute_position());
+        v.copy_into_self(self);
+
+        v
     }
     
     fn clone_from(&mut self, source: &Self) {

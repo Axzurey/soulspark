@@ -1,6 +1,6 @@
 use cgmath::Vector3;
 
-use crate::{blocks::{airblock::AirBlock, block::{Block, Blocks}}, vox::chunk_manager::{get_block_at_absolute, ChunkManager}};
+use crate::{blocks::{airblock::AirBlock, block::{Block, Blocks}}, vox::chunk_manager::{get_block_at_absolute_cloned, ChunkManager}};
 
 pub struct BlockRaycastResult {
     pub hit: Box<dyn Block + Send + Sync>,
@@ -56,7 +56,7 @@ pub fn raycast_blocks<I>(from: Vector3<f32>, direction: Vector3<f32>, distance: 
             stepped_index = 2;
         }
 
-        let block = get_block_at_absolute(ix, iy, iz, &chunk_manager.chunks);
+        let block = get_block_at_absolute_cloned(ix, iy, iz, &chunk_manager.chunks);
 
         match block.clone() {
             Some(b) => {
