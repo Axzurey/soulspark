@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, VecDeque}, sync::{mpsc::Sender, Arc, RwLock}, thread};
+use std::{collections::{HashMap, VecDeque}, sync::{mpsc::Sender, Arc, RwLock, RwLockReadGuard}, thread};
 
 use cgmath::{InnerSpace, Vector2, Vector3};
 use noise::Perlin;
@@ -178,18 +178,12 @@ pub fn mesh_slice_arrayed(chunk_x: i32, chunk_z: i32, y_slice: u32, chunks: &Has
     )
 }
 
-pub fn push_n(vec: &mut Vec<u32>, start: u32, shifts: [u32; 6]) {
-    for i in 0..6 {
-        vec.push(start + shifts[i]);
-    }
-}
-
 impl ChunkManager {
     pub fn new() -> Self {
 
         Self {
             chunks: HashMap::new(),
-            render_distance: 10,
+            render_distance: 5,
             seed: 52352,
             noise_gen: Perlin::new(rand::rngs::StdRng::seed_from_u64(52352).next_u32()),
             action_queue: ChunkActionQueue::new(),
@@ -279,6 +273,7 @@ impl ChunkManager {
     }
 
     pub fn mesh_slice(&self, device: &wgpu::Device, chunk: &Chunk, y_slice: u32) -> ((wgpu::Buffer, wgpu::Buffer, u32), (wgpu::Buffer, wgpu::Buffer, u32)) {
+        let t = Stopwatch::start_new();
         let mut vertices: Vec<SurfaceVertex> = Vec::with_capacity(16 * 16 * 16 * 6 * 4);
         let mut indices: Vec<u32> = Vec::with_capacity(16 * 16 * 16 * 6 * 6);
         let rel_abs_x = chunk.position.x * 16;
@@ -287,6 +282,17 @@ impl ChunkManager {
         let y_end = (y_slice + 1) * 16;
         let mut vertices_transparent: Vec<SurfaceVertex> = Vec::with_capacity(16 * 16 * 16 * 6 * 4);
         let mut indices_transparent: Vec<u32> = Vec::with_capacity(16 * 16 * 16 * 6 * 6);
+
+        let mut adj_chunks: HashMap<u32, RwLockReadGuard<Chunk>> = HashMap::new();
+
+        (chunk.position.x - 1..=chunk.position.x + 1).for_each(|x| {
+            (chunk.position.y - 1..=chunk.position.y + 1).for_each(|z| {
+                let xz = xz_to_index(x, z);
+                let chunk = self.chunks.get(&xz);
+                if chunk.is_none() {return}
+                adj_chunks.insert(xz, chunk.unwrap().read().unwrap());
+            })
+        });
 
         for x in 0..16 {
             for z in 0..16 {
@@ -304,13 +310,21 @@ impl ChunkManager {
                     let illumination = calculate_illumination_bytes(block_at);
 
                     let neighbors = [
-                        get_block_at_absolute_cloned(abs_x, yt as i32, abs_z + 1, &self.chunks),
-                        get_block_at_absolute_cloned(abs_x, yt as i32, abs_z - 1, &self.chunks),
-                        get_block_at_absolute_cloned(abs_x + 1, yt as i32, abs_z, &self.chunks),
-                        get_block_at_absolute_cloned(abs_x - 1, yt as i32, abs_z, &self.chunks),
-                        get_block_at_absolute_cloned(abs_x, yt as i32 + 1, abs_z, &self.chunks),
-                        get_block_at_absolute_cloned(abs_x, yt as i32 - 1, abs_z, &self.chunks),
-                    ];
+                        (abs_x, yt as i32, abs_z + 1),
+                        (abs_x, yt as i32, abs_z - 1),
+                        (abs_x + 1, yt as i32, abs_z),
+                        (abs_x - 1, yt as i32, abs_z),
+                        (abs_x, yt as i32 + 1, abs_z),
+                        (abs_x, yt as i32 - 1, abs_z),
+                    ].map(|(x, y, z)| {
+                        if y < 0 || y > 255 {return None};
+                        let chunk_x = x.div_euclid(16);
+                        let chunk_z = z.div_euclid(16);
+
+                        let chunk = adj_chunks.get(&xz_to_index(chunk_x, chunk_z))?;
+
+                        Some(chunk.get_block_at(x.rem_euclid(16) as u32, y as u32, z.rem_euclid(16) as u32))
+                    });
 
                     let faces = [
                         BlockFace::Front,
@@ -413,6 +427,8 @@ impl ChunkManager {
             }
         }
 
+        println!("Meshing {}micros (nobuff)", t.elapsed().as_micros());
+
         let ilen = indices.len() as u32;
 
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -440,6 +456,8 @@ impl ChunkManager {
             contents: bytemuck::cast_slice(&indices_transparent),
             usage: wgpu::BufferUsages::INDEX,
         });
+
+        println!("Meshing {}micros", t.elapsed().as_micros());
 
         ((vertex_buffer, index_buffer, ilen), ((vertex_buffer_t, index_buffer_t, ilen_t)))
     }
@@ -479,7 +497,7 @@ impl ChunkManager {
         let mut requires_meshing = (xd - 1..=xd + 1).map(|x| {
             (zd - 1..=zd + 1).map(move |z| {
                 let cond = xd == x && zd == z;
-                (if cond {yd - 1} else {0}..=if cond {yd + 1} else {15}).map(move |y| {
+                (if cond {0} else {yd - 1}..=if cond {15} else {yd + 1}).map(move |y| {
                     Vector3::new(x as f32, y as f32, z as f32)
                 })
             }).flatten()
@@ -511,7 +529,9 @@ impl ChunkManager {
         requires_meshing.sort_by(|a, b| (a - xyz).magnitude().partial_cmp(&(b - xyz).magnitude()).unwrap());
 
         for v in requires_meshing {
-            self.update_queue.update_chunk_mesh(Vector3::new(v.x as i32, v.y as i32, v.z as i32));
+            if !self.unresolved_meshes.contains(&Vector3::new(v.x as i32, v.y as i32, v.z as i32)) {
+                self.update_queue.update_chunk_mesh(Vector3::new(v.x as i32, v.y as i32, v.z as i32));
+            }
         }
     }
 
@@ -533,10 +553,10 @@ impl ChunkManager {
         //gets the adjacent chunks, including itself :)
         let mut requires_meshing = (xd - 1..=xd + 1).map(|x| {
             (zd - 1..=zd + 1).map(move |z| {
-                (0..16).map(move |y| {
+                let cond = xd == x && zd == z;
+                (if cond {0} else {yd - 1}..=if cond {15} else {yd + 1}).map(move |y| {
                     Vector3::new(x as f32, y as f32, z as f32)
                 })
-                
             }).flatten()
         }).flatten().collect::<Vec<Vector3<f32>>>();
 
@@ -566,7 +586,9 @@ impl ChunkManager {
         requires_meshing.sort_by(|a, b| (a - xyz).magnitude().partial_cmp(&(b - xyz).magnitude()).unwrap());
 
         for v in requires_meshing {
-            self.update_queue.update_chunk_mesh(Vector3::new(v.x as i32, v.y as i32, v.z as i32));
+            if !self.unresolved_meshes.contains(&Vector3::new(v.x as i32, v.y as i32, v.z as i32)) {
+                self.update_queue.update_chunk_mesh(Vector3::new(v.x as i32, v.y as i32, v.z as i32));
+            }
         }
     }
 
