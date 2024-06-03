@@ -219,7 +219,7 @@ impl Chunk {
     }
 
     pub fn get_block_at(&self, x: u32, y: u32, z: u32) -> &BlockType {
-        &self.grid[(y / 16) as usize][local_xyz_to_index(x, y % 16, z) as usize]
+        &self.grid[(y / 16) as usize][local_xyz_to_index(x % 16, y % 16, z % 16) as usize]
     }
 
     pub fn set_solid_buffer(&mut self, slice: u32, buffers: (wgpu::Buffer, wgpu::Buffer, u32)) {

@@ -41,6 +41,21 @@ pub enum BlockFace {
     Back = 5,
 }
 
+impl From<usize> for BlockFace {
+    fn from(value: usize) -> Self {
+        match value {
+            0 => BlockFace::Top,
+            1 => BlockFace::Bottom,
+            2 => BlockFace::Right,
+            3 => BlockFace::Left,
+            4 => BlockFace::Front,
+            5 => BlockFace::Back,
+            _ => panic!("Value {} is invalid", value)
+        }
+    }
+}
+
+#[inline(always)]
 pub fn calculate_illumination_bytes(block: &BlockType) -> u32 {
     let mut val: u32 = 0;
     
@@ -91,6 +106,12 @@ pub trait Block {
     fn copy_into_self(&mut self, other: &BlockType) {
         self.set_light(*other.get_light());
         self.set_sunlight_intensity(other.get_sunlight_intensity());
+    }
+}
+
+impl PartialEq for Box<dyn Block + Send + Sync> {
+    fn eq(&self, other: &Self) -> bool {
+        self.get_block() == other.get_block()
     }
 }
 
