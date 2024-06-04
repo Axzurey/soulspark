@@ -91,7 +91,7 @@ impl From<usize> for BlockFace {
     }
 }
 
-#[inline(always)]
+#[inline]
 pub fn calculate_illumination_bytes(block: &BlockType) -> u32 {
     let mut val: u32 = 0;
     

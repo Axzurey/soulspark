@@ -61,7 +61,7 @@ static SPLINE_FLATNESS: Lazy<Spline<f32, f32>> = Lazy::new(|| {
         Key::new(1.0, 1.0, Interpolation::Linear),
     ])
 });
-
+#[inline]
 pub fn perlin_octaved_3d(perlin: Perlin, x: i32, y: i32, z: i32, octaves: i32, mut amp: f32, mut freq: f32, persistence_a: f32, persistence_f: f32, zoom: f32) -> f32 {
     let mut total: f32 = 0.0;
     let mut amp_sum: f32 = 0.0;
@@ -81,7 +81,7 @@ pub fn perlin_octaved_3d(perlin: Perlin, x: i32, y: i32, z: i32, octaves: i32, m
 
     total / amp_sum
 }
-
+#[inline]
 pub fn perlin_octaved_2d(perlin: Perlin, x: i32, z: i32, octaves: i32, mut amp: f32, mut freq: f32, persistence_a: f32, persistence_f: f32, zoom: f32) -> f32 {
     let mut total: f32 = 0.0;
     let mut amp_sum: f32 = 0.0;
@@ -99,7 +99,7 @@ pub fn perlin_octaved_2d(perlin: Perlin, x: i32, z: i32, octaves: i32, mut amp: 
 
     total / amp_sum
 }
-
+#[inline]
 pub fn get_modifiers(noisegen: Perlin, x: i32, z: i32) -> [f32; 3] {
     let continentalness = perlin_octaved_2d(noisegen, x, z, 6, 1.3, 1.2, 0.2, 2.0, 400.0) * 0.5 + 0.5;
     let flatness = perlin_octaved_2d(noisegen, x, z, 6, 0.7, 1.0, 0.2, 2.0, 400.0).abs();
@@ -107,19 +107,19 @@ pub fn get_modifiers(noisegen: Perlin, x: i32, z: i32) -> [f32; 3] {
 
     [continentalness, flatness, peaks]
 }
-
+#[inline]
 pub fn is_cave(noisegen: Perlin, x: i32, y: i32, z: i32) -> bool {
     (1. - perlin_octaved_3d(noisegen, x, y, z, 1, 1.3, 1.4, 0.5, 0.5, 35.).abs()) 
         * SPLINE_WORM.sample(y as f32).expect(&format!("y is {}", y)) <= 0.5 
     //|| !get_density_for_cave(noisegen, x, y, z)
 }
-
+#[inline]
 pub fn get_density_for_cave(noisegen: Perlin, x: i32, y: i32, z: i32) -> bool {
     let p = perlin_octaved_3d(noisegen, x, y, z, 1, 1.1, 1.35, 0.6, 1.1, 1.) * 10.;
 
     p * SPLINE_CAVE_Y_MOD.sample(y as f32).unwrap() < 1.
 }
-
+#[inline]
 pub fn density_map_plane(noisegen: Perlin, x: i32, z: i32) -> bool {
     let noise = perlin_octaved_2d(noisegen, x, z, 1, 1.3, 0.7, 0.2, 0.5, 25.0);
 
@@ -130,7 +130,7 @@ pub fn density_map_plane(noisegen: Perlin, x: i32, z: i32) -> bool {
 
     noise < noise1 && noise < noise2 && noise < noise3 && noise < noise4
 }
-
+#[inline]
 pub fn generate_surface_height(noisegen: Perlin, x: i32, z: i32) -> i32 {
 
     let [c, f, p] = get_modifiers(noisegen, x, z);

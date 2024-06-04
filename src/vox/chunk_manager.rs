@@ -22,6 +22,7 @@ pub struct ChunkManager {
     pub unresolved_meshes: Vec<Vector3<i32>>
 }
 
+#[inline]
 pub fn get_block_at_absolute_cloned(x: i32, y: i32, z: i32, chunks: &HashMap<u32, Arc<RwLock<Chunk>>>) -> Option<BlockType> {
     if y < 0 || y > 255 {return None};
     let chunk_x = x.div_euclid(16);
@@ -443,7 +444,7 @@ impl ChunkManager {
 
         ((vertex_buffer, index_buffer, ilen), ((vertex_buffer_t, index_buffer_t, ilen_t)))
     }
-
+    #[inline]
     pub fn get_block_at_absolute(&self, x: i32, y: i32, z: i32) -> Option<BlockType> {
         if y < 0 || y > 255 {return None};
         let chunk_x = x.div_euclid(16);
@@ -570,39 +571,90 @@ impl ChunkManager {
         }
     }
 
+    pub fn modify_block_at<F>(x: i32, y: u32, z: i32, chunks: &HashMap<u32, Arc<RwLock<Chunk>>>, callback: F) where F: FnMut(&mut BlockType) {
+        let cx = x.div_euclid(16);
+        let cz = z.div_euclid(16);
+
+        let xmod = x.rem_euclid(16) as u32;
+        let zmod = z.rem_euclid(16) as u32;
+
+        let xz = xz_to_index(cx, cz);
+
+        let chunk_raw = chunks.get(&xz);
+
+        if let Some(chunk) = chunk_raw {
+            let mut write = chunk.write().unwrap();
+
+            write.modify_block_at(xmod, y, zmod, callback);
+        }
+
+    }
+
     pub fn flood_lights(&mut self, chunk_index: u32) {
 
-        let mut chunk = self.chunks.get_mut(&chunk_index).unwrap().write().unwrap();
+        let c = self.chunks.get(&chunk_index).unwrap().read().unwrap();
+        
+        let ax = c.position.x;
+        let az = c.position.y;
+        
+        drop(c);
+        
         for x in 0..16 {
             for z in 0..16 {
-                let mut initial_height = 1000; //safe value
-                for y in (0..256).rev() {
-                    if initial_height != 1000 && y < initial_height - 15 {
-                        chunk.modify_block_at(x as u32, y as u32, z as u32, |block| {
-                            block.set_sunlight_intensity(0);
+                for y in (0..=255).rev() {
+
+                    let block = get_block_at_absolute_cloned(x + ax * 16, y, z + az * 16, &self.chunks).unwrap();
+
+                    let block_below = get_block_at_absolute_cloned(x + ax * 16, y - 1, z + az * 16, &self.chunks);
+                    //if it is the first solid block hit(for light)...
+                    if block.has_partial_transparency() && block_below.is_some() && !block_below.unwrap().has_partial_transparency() {
+                        //start spreading light...
+                        let mut queue = VecDeque::new();
+                        queue.push_back(block);
+
+                        ChunkManager::modify_block_at(x + ax * 16, y as u32, z + az * 16, &self.chunks, |v| {
+                            v.set_sunlight_intensity(15);
                         });
-                        continue;
-                    }
-                    else if initial_height != 1000 {
-                        continue;
-                    }
 
-                    let block = chunk.get_block_at(x, y, z);
+                        while queue.len() > 0 {
+                            let block = queue.pop_front().unwrap();
+                            let pos = block.get_absolute_position();
+                            let intensity = block.get_sunlight_intensity();
+                            //no reason to propogate at 0 intensity
+                            if intensity == 0 {
+                                continue;
+                            }
 
-                    //if it is the first solid block hit...
-                    if !block.has_partial_transparency() {
-                        //start spreading light downwards...
-                        for sy in (y - 15)..=y {
-                            chunk.modify_block_at(x as u32, sy as u32, z as u32, |block| {
-                                block.set_sunlight_intensity((15 - (y - sy)) as u8);
+                            [
+                                get_block_at_absolute_cloned(pos.x + 1, pos.y, pos.z, &self.chunks),
+                                get_block_at_absolute_cloned(pos.x - 1, pos.y, pos.z, &self.chunks),
+                                get_block_at_absolute_cloned(pos.x, pos.y, pos.z + 1, &self.chunks),
+                                get_block_at_absolute_cloned(pos.x, pos.y, pos.z - 1, &self.chunks),
+                                get_block_at_absolute_cloned(pos.x, pos.y + 1, pos.z, &self.chunks),
+                                get_block_at_absolute_cloned(pos.x, pos.y - 1, pos.z, &self.chunks),
+                            ].map(|v| {
+                                if let Some(x) = v {
+                                    if x.get_sunlight_intensity() < intensity - 1 {
+                                        let xp = x.get_absolute_position();
+                                        if intensity == 15 && xp.y == pos.y - 1 {
+                                            ChunkManager::modify_block_at(xp.x, xp.y as u32, xp.z, &self.chunks, |v| {
+                                                v.set_sunlight_intensity(15);
+                                            });
+                                        }
+                                        else {
+                                            ChunkManager::modify_block_at(xp.x, xp.y as u32, xp.z, &self.chunks, |v| {
+                                                v.set_sunlight_intensity(intensity - 1);
+                                            });
+                                        }
+
+                                        //we only want light to propogate via air / transparent blocks
+                                        if x.has_partial_transparency() {
+                                            queue.push_back(x);
+                                        }
+                                    }
+                                }
                             });
                         }
-                        initial_height = y;
-                    }
-                    else {
-                        chunk.modify_block_at(x as u32, y as u32, z as u32, |block| {
-                            block.set_sunlight_intensity(15);
-                        });
                     }
                 }
             }
