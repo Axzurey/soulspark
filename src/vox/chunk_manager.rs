@@ -280,139 +280,7 @@ impl ChunkManager {
     }
 
     pub fn mesh_slice(&self, device: &wgpu::Device, chunk: &Chunk, y_slice: u32) -> ((wgpu::Buffer, wgpu::Buffer, u32), (wgpu::Buffer, wgpu::Buffer, u32)) {
-        let mut vertices: Vec<SurfaceVertex> = Vec::with_capacity(16 * 16 * 16 * 6 * 4);
-        let mut indices: Vec<u32> = Vec::with_capacity(16 * 16 * 16 * 6 * 6);
-        let rel_abs_x = chunk.position.x * 16;
-        let rel_abs_z = chunk.position.y * 16;
-        let y_start = y_slice * 16;
-        let y_end = (y_slice + 1) * 16;
-        let mut vertices_transparent: Vec<SurfaceVertex> = Vec::with_capacity(16 * 16 * 16 * 6 * 4);
-        let mut indices_transparent: Vec<u32> = Vec::with_capacity(16 * 16 * 16 * 6 * 6);
-
-        for x in 0..16 {
-            for z in 0..16 {
-                let abs_x = x as i32 + rel_abs_x;
-                let abs_z = z as i32 + rel_abs_z;
-
-                for yt in y_start..y_end {
-                    let y = yt % 16;
-                    let block_at = chunk.get_block_at(x, yt, z);
-
-                    if !block_at.does_mesh() || block_at.get_block() == Blocks::AIR {
-                        continue;
-                    }
-
-                    let illumination = calculate_illumination_bytes(block_at);
-
-                    let neighbors = [
-                        get_block_at_absolute_cloned(abs_x, yt as i32, abs_z + 1, &self.chunks),
-                        get_block_at_absolute_cloned(abs_x, yt as i32, abs_z - 1, &self.chunks),
-                        get_block_at_absolute_cloned(abs_x + 1, yt as i32, abs_z, &self.chunks),
-                        get_block_at_absolute_cloned(abs_x - 1, yt as i32, abs_z, &self.chunks),
-                        get_block_at_absolute_cloned(abs_x, yt as i32 + 1, abs_z, &self.chunks),
-                        get_block_at_absolute_cloned(abs_x, yt as i32 - 1, abs_z, &self.chunks),
-                    ];
-
-                    let faces = [
-                        BlockFace::Front,
-                        BlockFace::Back,
-                        BlockFace::Right,
-                        BlockFace::Left,
-                        BlockFace::Top,
-                        BlockFace::Bottom,
-                    ];
-
-                    let is_transparent = block_at.has_partial_transparency();
-
-                    let cb = block_at.get_block();
-
-                    for (i, neighbor) in neighbors.iter().enumerate() {
-                        if let Some(neighbor_block) = neighbor {
-                            if (neighbor_block.has_partial_transparency() && !is_transparent) || (is_transparent && cb != Blocks::AIR && cb != neighbor_block.get_block()) {
-                                let current_l = if is_transparent {
-                                    vertices_transparent.len() as u32
-                                } else {vertices.len() as u32};
-                                let face = faces[i];
-
-                                let (face_vertices, face_indices) = match face {
-                                    BlockFace::Front => (
-                                        [
-                                            [x, y, z + 1],
-                                            [x + 1, y, z + 1],
-                                            [x, y + 1, z + 1],
-                                            [x + 1, y + 1, z + 1],
-                                        ],
-                                        [0, 1, 2, 1, 3, 2],
-                                    ),
-                                    BlockFace::Back => (
-                                        [
-                                            [x, y, z],
-                                            [x + 1, y, z],
-                                            [x, y + 1, z],
-                                            [x + 1, y + 1, z],
-                                        ],
-                                        [2, 1, 0, 2, 3, 1],
-                                    ),
-                                    BlockFace::Right => (
-                                        [
-                                            [x + 1, y, z],
-                                            [x + 1, y, z + 1],
-                                            [x + 1, y + 1, z],
-                                            [x + 1, y + 1, z + 1],
-                                        ],
-                                        [2, 1, 0, 2, 3, 1],
-                                    ),
-                                    BlockFace::Left => (
-                                        [
-                                            [x, y, z],
-                                            [x, y, z + 1],
-                                            [x, y + 1, z],
-                                            [x, y + 1, z + 1],
-                                        ],
-                                        [0, 1, 2, 1, 3, 2],
-                                    ),
-                                    BlockFace::Top => (
-                                        [
-                                            [x, y + 1, z],
-                                            [x, y + 1, z + 1],
-                                            [x + 1, y + 1, z],
-                                            [x + 1, y + 1, z + 1],
-                                        ],
-                                        [0, 1, 2, 1, 3, 2],
-                                    ),
-                                    BlockFace::Bottom => (
-                                        [
-                                            [x, y, z],
-                                            [x, y, z + 1],
-                                            [x + 1, y, z],
-                                            [x + 1, y, z + 1],
-                                        ],
-                                        [2, 1, 0, 2, 3, 1],
-                                    ),
-                                };
-
-                                if is_transparent {
-                                    indices_transparent.extend(face_indices.iter().map(|&index| index + current_l));
-                                    for (j, &pos) in face_vertices.iter().enumerate() {
-                                        vertices_transparent.push(SurfaceVertex::from_position(
-                                            pos, face, j as u32, block_at.get_surface_textures(face), illumination
-                                        ));
-                                    }
-                                }
-                                else {
-                                    indices.extend(face_indices.iter().map(|&index| index + current_l));
-                                    for (j, &pos) in face_vertices.iter().enumerate() {
-                                        vertices.push(SurfaceVertex::from_position(
-                                            pos, face, j as u32, block_at.get_surface_textures(face), illumination
-                                        ));
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        let ((vertices, indices, _), (vertices_transparent, indices_transparent, _)) = mesh_slice_arrayed(chunk.position.x, chunk.position.y, y_slice, &self.chunks);
 
         let ilen = indices.len() as u32;
 
@@ -572,6 +440,8 @@ impl ChunkManager {
     }
 
     pub fn modify_block_at<F>(x: i32, y: u32, z: i32, chunks: &HashMap<u32, Arc<RwLock<Chunk>>>, callback: F) where F: FnMut(&mut BlockType) {
+        if y > 255 {return};
+
         let cx = x.div_euclid(16);
         let cz = z.div_euclid(16);
 
