@@ -1,4 +1,5 @@
 use cgmath::Vector3;
+use glam::{ivec3, IVec3};
 use serde::Deserialize;
 use core::fmt::Debug;
 use std::ops::BitOrAssign;
@@ -39,6 +40,41 @@ pub enum BlockFace {
     Left = 3,
     Front = 4,
     Back = 5,
+}
+
+impl BlockFace {
+    pub fn normal_index(&self) -> u32 {
+        match self {
+            BlockFace::Left => 0u32,
+            BlockFace::Right => 1u32,
+            BlockFace::Bottom => 2u32,
+            BlockFace::Top => 3u32,
+            BlockFace::Front => 4u32,
+            BlockFace::Back => 5u32,
+        }
+    }
+
+    pub fn world_to_sample(&self, axis: i32, x: i32, y: i32) -> IVec3 {
+        match self {
+            BlockFace::Top => ivec3(x, axis + 1, y),
+            BlockFace::Bottom => ivec3(x, axis, y),
+            BlockFace::Left => ivec3(axis, y, x),
+            BlockFace::Right => ivec3(axis + 1, y, x),
+            BlockFace::Front => ivec3(x, y, axis),
+            BlockFace::Back => ivec3(x, y, axis + 1),
+        }
+    }
+
+    pub fn reverse_order(&self) -> bool {
+        match self {
+            BlockFace::Top => true,      //+1
+            BlockFace::Bottom => false,   //-1
+            BlockFace::Left => false,   //-1
+            BlockFace::Right => true,   //+1
+            BlockFace::Front => true, //-1
+            BlockFace::Back => false,   //+1
+        }
+    }
 }
 
 impl From<usize> for BlockFace {

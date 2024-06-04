@@ -192,8 +192,9 @@ pub fn vec3_to_index(pos: IVec3, bounds: i32) -> usize {
 const CHUNK_SIZE: usize = 16;
 const CHUNK_SIZE_P: usize = 18;
 //https://github.com/TanTanDev/binary_greedy_mesher_demo/blob/main/src/greedy_mesher_optimized.rs
-pub fn build_chunk_mesh(chunk: &Arc<RwLock<Chunk>>, chunks: &HashMap<u32, Arc<RwLock<Chunk>>>, slice: u32) -> Option<()> {
-
+pub fn build_chunk_mesh(chunk: &Arc<RwLock<Chunk>>, chunks: &HashMap<u32, Arc<RwLock<Chunk>>>, slice: u32) -> (Vec<SurfaceVertex>, Vec<u32>) {
+    let mut vertices_out: Vec<SurfaceVertex> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
     // solid binary for each x,y,z axis (3)
     let mut axis_cols = [[[0u64; CHUNK_SIZE_P]; CHUNK_SIZE_P]; 3];
 
@@ -375,14 +376,10 @@ pub fn build_chunk_mesh(chunk: &Arc<RwLock<Chunk>>, chunks: &HashMap<u32, Arc<Rw
             }
         }
     }
-
-    mesh.vertices.extend(vertices);
-    if mesh.vertices.is_empty() {
-        None
-    } else {
-        mesh.indices = generate_indices(mesh.vertices.len());
-        Some(mesh)
-    }
+    vertices_out.extend(vertices);
+    
+    let indices = generate_indices(vertices_out.len());
+    (vertices_out, indices)
 }
 
 // todo: compress further?
