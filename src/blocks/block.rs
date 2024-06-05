@@ -98,6 +98,8 @@ pub fn calculate_illumination_bytes(block: &BlockType) -> u32 {
     let sunlight = block.get_sunlight_intensity();
     let light = block.get_light();
 
+    //sunlight: 4 bits
+
     val.bitor_assign(light[0] as u32);
     val.bitor_assign((light[1] as u32) << 8);
     val.bitor_assign((light[2] as u32) << 16);

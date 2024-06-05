@@ -4,8 +4,7 @@
 
 struct VertexInput {
     @location(0) d0: u32,
-    @location(1) d1: u32,
-    @location(2) illumination: u32
+    @location(1) illumination: u32
 }
 
 struct ChunkData {
@@ -29,10 +28,10 @@ fn vs_main(vertex: VertexInput, chunk_data: ChunkData) -> VertexOutput {
 
     var normalid = extractBits(vertex.d0, 15u, 3u);
     var uvi = extractBits(vertex.d0, 18u, 2u);
+    var diffuse_texure_index = extractBits(vertex.d0, 20u, 6u);
 
-    var diffuse_texure_index = extractBits(vertex.d1, 0u, 8u);
-    var normal_texure_index = extractBits(vertex.d1, 8u, 8u);
-    var emissive_texure_index = extractBits(vertex.d1, 16u, 8u);
+    var normal_texure_index = 0u;
+    var emissive_texure_index = 0u;
 
     var uv = vec2(select(0.0, 1.0, uvi == 2 || uvi == 0), select(0.0, 1.0, uvi == 1 || uvi == 0));
 

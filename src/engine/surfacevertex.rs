@@ -11,7 +11,6 @@ use super::vertex::Vertex;
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct SurfaceVertex {
     pub d0: u32,
-    pub d1: u32,
     pub illumination: u32
 }
 
@@ -25,22 +24,27 @@ impl SurfaceVertex {
             BlockFace::Front => 4,
             BlockFace::Back => 5,
         };
+        // 15 bits for pos
+        // 3 bits for direction
+        // 2 bits for normal
+        // 6 bits for diffuse texture index
 
         let mut d0 = 0;
-        let mut d1 = 0;
+        // let mut d1 = 0;
 
         d0.bitor_assign(pos[0]);
         d0.bitor_assign(pos[1] << 5);
         d0.bitor_assign(pos[2] << 10);
         d0.bitor_assign(face_dir << 15);
         d0.bitor_assign(nth << 18);
+        d0.bitor_assign((texture_indices.0 as u32) << 20);
 
-        d1.bitor_assign(texture_indices.0 as u32);
-        d1.bitor_assign((texture_indices.1 as u32) << 8);
-        d1.bitor_assign((texture_indices.2 as u32) << 16);
+        // d1.bitor_assign(texture_indices.0 as u32);
+        // d1.bitor_assign((texture_indices.1 as u32) << 8);
+        // d1.bitor_assign((texture_indices.2 as u32) << 16);
     
         SurfaceVertex {
-            d0, d1, illumination
+            d0, illumination
         }
     }
 }
@@ -59,11 +63,6 @@ impl Vertex for SurfaceVertex {
                 wgpu::VertexAttribute {
                     offset: mem::size_of::<[u32; 1]>() as wgpu::BufferAddress,
                     shader_location: 1,
-                    format: wgpu::VertexFormat::Uint32,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[u32; 2]>() as wgpu::BufferAddress,
-                    shader_location: 2,
                     format: wgpu::VertexFormat::Uint32,
                 },
             ]
