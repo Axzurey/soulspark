@@ -223,6 +223,19 @@ impl Chunk {
     pub fn get_block_at(&self, x: u32, y: u32, z: u32) -> &BlockType {
         &self.grid[(y / 16) as usize][local_xyz_to_index(x % 16, y % 16, z % 16) as usize]
     }
+    #[inline]
+    pub fn get_heighest_transparent_y(&self, x: u32, z: u32) -> u32 {
+        for y in (0..=255).rev() {
+            let ys = y / 16;
+            
+            let block = &self.grid[ys as usize][local_xyz_to_index(x, y % 16, z) as usize];
+
+            if block.has_partial_transparency() {
+                return y;
+            }
+        }
+        0
+    }
 
     pub fn set_solid_buffer(&mut self, slice: u32, buffers: (wgpu::Buffer, wgpu::Buffer, u32)) {
         self.solid_buffers[slice as usize] = buffers;
