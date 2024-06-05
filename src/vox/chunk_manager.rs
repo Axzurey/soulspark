@@ -472,7 +472,7 @@ impl ChunkManager {
     pub fn flood_lights_from_broken(&mut self, pos: Vector3<i32>, previous: BlockType) {
         let mut queue = VecDeque::new();
         ChunkManager::modify_block_at(pos.x, pos.y as u32, pos.z, &self.chunks, |v| {
-            v.set_sunlight_intensity(previous.get_sunlight_intensity() + 1);
+            v.set_sunlight_intensity(previous.get_sunlight_intensity());
         });
         queue.push_back(get_block_at_absolute_cloned(pos.x, pos.y, pos.z, &self.chunks).unwrap());
 
@@ -498,11 +498,11 @@ impl ChunkManager {
                         let xp = x.get_absolute_position();
                         let rel = x.get_relative_position();
                         let chunk = self.chunks.get(&xz_to_index(xp.x.div_euclid(16), xp.z.div_euclid(16))).unwrap().read().unwrap();
-                        let highest = chunk.get_heighest_transparent_y(rel.x, rel.z) as i32;
+                        //let highest = chunk.get_heighest_transparent_y(rel.x, rel.z) as i32;
 
                         drop(chunk);
 
-                        if intensity == 15 && xp.y == highest - 1 {
+                        if intensity == 15 && xp.y == pos.y - 1 {
                             //no locking please :(
                             ChunkManager::modify_block_at(xp.x, xp.y as u32, xp.z, &self.chunks, |v| {
                                 v.set_sunlight_intensity(15);
