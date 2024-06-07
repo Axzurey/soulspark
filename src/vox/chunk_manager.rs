@@ -389,7 +389,7 @@ impl ChunkManager {
         }
     }
 
-    pub fn place_block(&mut self, device: &wgpu::Device, block: BlockType) {
+    pub fn place_block(&mut self, device: &wgpu::Device, mut block: BlockType) {
         let abs = block.get_absolute_position();
 
         let index = xz_to_index(abs.x.div_euclid(16), abs.z.div_euclid(16));
@@ -400,6 +400,9 @@ impl ChunkManager {
 
         let previous = chunk.grid[(abs.y / 16) as usize][local_xyz_to_index(local.x, local.y, local.z) as usize].clone();
 
+        block.set_sunlight_intensity(previous.get_sunlight_intensity());
+        block.set_light(*previous.get_light());
+        let block_clone = block.clone();
         chunk.grid[(abs.y / 16) as usize][local_xyz_to_index(local.x, local.y, local.z) as usize] = block;
 
         let xd = abs.x.div_euclid(16);
@@ -424,7 +427,7 @@ impl ChunkManager {
 
         drop(chunk);
 
-        self.flood_lights_from_broken(abs, previous);
+        self.flood_lights_from_placed(abs, block_clone);
 
         // requires_meshing_light.for_each(|v| {
         //     let index = xz_to_index(v.0, v.1);
@@ -466,7 +469,74 @@ impl ChunkManager {
 
             write.modify_block_at(xmod, y, zmod, callback);
         }
+    }
 
+    pub fn flood_lights_from_placed(&mut self, pos: Vector3<i32>, current: BlockType) {
+        let mut queue = VecDeque::new();
+        
+        queue.push_back(current);
+
+        while queue.len() > 0 {
+            let block = queue.pop_front().unwrap();
+            let pos = block.get_absolute_position();
+            let intensity = block.get_sunlight_intensity();
+
+            if intensity == 0 {
+                continue;
+            }
+
+            let adj = [
+                get_block_at_absolute_cloned(pos.x + 1, pos.y, pos.z, &self.chunks),
+                get_block_at_absolute_cloned(pos.x - 1, pos.y, pos.z, &self.chunks),
+                get_block_at_absolute_cloned(pos.x, pos.y, pos.z + 1, &self.chunks),
+                get_block_at_absolute_cloned(pos.x, pos.y, pos.z - 1, &self.chunks),
+                get_block_at_absolute_cloned(pos.x, pos.y + 1, pos.z, &self.chunks),
+                get_block_at_absolute_cloned(pos.x, pos.y - 1, pos.z, &self.chunks),
+            ];
+
+            adj.map(|v| {
+
+                if let Some(x) = v {
+                    let pos = x.get_absolute_position();
+                    let mut n = 0;
+                    let mut highest_light = 0;
+
+                    let adj = [
+                        get_block_at_absolute_cloned(pos.x + 1, pos.y, pos.z, &self.chunks),
+                        get_block_at_absolute_cloned(pos.x - 1, pos.y, pos.z, &self.chunks),
+                        get_block_at_absolute_cloned(pos.x, pos.y, pos.z + 1, &self.chunks),
+                        get_block_at_absolute_cloned(pos.x, pos.y, pos.z - 1, &self.chunks),
+                        get_block_at_absolute_cloned(pos.x, pos.y + 1, pos.z, &self.chunks),
+                        get_block_at_absolute_cloned(pos.x, pos.y - 1, pos.z, &self.chunks),
+                    ];
+
+                    adj.map(|v| {
+                        if let Some(z) = v {
+                            let i = z.get_sunlight_intensity();
+                            if i >= intensity {
+                                
+                                n += 1;
+                                if i > highest_light && z.get_absolute_position() != pos {
+                                    highest_light = i;
+                                }
+                            }
+                        }
+                    });
+
+                    //more than 1 block with higher light.
+                    if n > 1 {
+                        ChunkManager::modify_block_at(pos.x, pos.y as u32, pos.z, &self.chunks, |v| {
+                            v.set_sunlight_intensity(highest_light - 1);
+                        });
+                    }
+                    else {
+
+                    }
+                }
+
+                
+            });
+        }
     }
 
     pub fn flood_lights_from_broken(&mut self, pos: Vector3<i32>, previous: BlockType) {
