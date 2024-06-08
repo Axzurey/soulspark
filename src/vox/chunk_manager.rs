@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, VecDeque}, sync::{mpsc::Sender, Arc, RwLock}, thread};
+use std::{collections::{HashMap, HashSet, VecDeque}, sync::{mpsc::Sender, Arc, RwLock, RwLockReadGuard}, thread};
 
 use cgmath::{InnerSpace, Vector2, Vector3};
 use noise::Perlin;
@@ -11,6 +11,17 @@ use crate::{blocks::{airblock::AirBlock, block::{calculate_illumination_bytes, B
 
 use super::{chunk::{local_xyz_to_index, xz_to_index, Chunk, ChunkGridType}, chunkactionqueue::ChunkActionQueue};
 
+#[derive(PartialEq)]
+struct LightingBFSRemoveNode {
+    pub position: Vector3<i32>,
+    pub intensity: u8
+}
+
+#[derive(PartialEq)]
+struct LightingBFSAddNode {
+    pub position: Vector3<i32>
+}
+
 pub struct ChunkManager {
     pub chunks: HashMap<u32, Arc<RwLock<Chunk>>>,
     render_distance: u32,
@@ -22,7 +33,6 @@ pub struct ChunkManager {
     pub unresolved_meshes: Vec<Vector3<i32>>
 }
 
-#[inline]
 pub fn get_block_at_absolute_cloned(x: i32, y: i32, z: i32, chunks: &HashMap<u32, Arc<RwLock<Chunk>>>) -> Option<BlockType> {
     if y < 0 || y > 255 {return None};
     let chunk_x = x.div_euclid(16);
@@ -57,8 +67,6 @@ pub fn mesh_slice_arrayed(chunk_x: i32, chunk_z: i32, y_slice: u32, chunks: &Has
                 if !block_at.does_mesh() || block_at.get_block() == Blocks::AIR {
                     continue;
                 }
-
-                let illumination = calculate_illumination_bytes(&block_at);
 
                 let neighbors = [
                     get_block_at_absolute_cloned(abs_x, yt as i32, abs_z + 1, &chunks),
@@ -147,6 +155,7 @@ pub fn mesh_slice_arrayed(chunk_x: i32, chunk_z: i32, y_slice: u32, chunks: &Has
                                 ),
                             };
 
+                            let illumination = calculate_illumination_bytes(neighbor_block);
                             if is_transparent {
                                 indices_transparent.extend(face_indices.iter().map(|&index| index + current_l));
                                 for (j, &pos) in face_vertices.iter().enumerate() {
@@ -334,7 +343,7 @@ impl ChunkManager {
         //TODO: do removal formalities, such as dropping the block...
 
         let previous = chunk.grid[(y / 16) as usize][local_xyz_to_index(xrem, yrem, zrem) as usize].clone();
-
+        let prevmax = chunk.get_surface_block_y(xrem, zrem);
         chunk.grid[(y / 16) as usize][local_xyz_to_index(xrem, yrem, zrem) as usize] = Box::new(
             AirBlock::new(
                 Vector3::new(xrem, yrem, zrem), 
@@ -345,36 +354,25 @@ impl ChunkManager {
 
         let xd = x.div_euclid(16);
         let zd = z.div_euclid(16);
-        let yd = y.div_euclid(16);
-
-        //gets the adjacent chunks, including itself :)
-        let mut requires_meshing = (xd - 1..=xd + 1).map(|x| {
-            (zd - 1..=zd + 1).map(move |z| {
-                let cond = xd == x && zd == z;
-                (if cond {0} else {yd - 1}..=if cond {15} else {yd + 1}).map(move |y| {
-                    Vector3::new(x as f32, y as f32, z as f32)
-                })
-            }).flatten()
-        }).flatten().collect::<Vec<Vector3<f32>>>();
-
-        let requires_meshing_light = (xd - 1..=xd + 1).map(|x| {
-            (zd - 1..=zd + 1).map(move |z| {
-                (x, z)
-            })
-        }).flatten();
+        let yd = y.div_euclid(16) as i32;
 
         drop(chunk);
 
-        self.flood_lights_from_broken(Vector3::new(x, y as i32, z), previous);
+        let mut requires_meshing = self.flood_lights_from_broken(Vector3::new(x, y as i32, z), previous, prevmax);
 
-        // requires_meshing_light.for_each(|v| {
-        //     let index = xz_to_index(v.0, v.1);
+        let additional = vec![
+            Vector3::new(xd + 1, yd, zd),
+            Vector3::new(xd - 1, yd, zd),
+            Vector3::new(xd, yd + 1, zd),
+            Vector3::new(xd, yd - 1, zd),
+            Vector3::new(xd, yd, zd + 1),
+            Vector3::new(xd, yd, zd - 1),
+            Vector3::new(xd, yd, zd)
+        ];
 
-        //     let chunk = self.chunks.get(&index);
-        //     if chunk.is_none() {return};
-
-        //     self.update_queue.update_chunk_lighting(Vector2::new(v.0, v.1));
-        // });
+        for v in additional {
+            requires_meshing.insert(v);
+        }
 
         let xyz: Vector3<f32> = Vector3::new(
             if xrem == 0 {xd - 1} else if xrem == 15 {xd + 1} else {xd} as f32,
@@ -382,7 +380,7 @@ impl ChunkManager {
             if zrem == 0 {zd - 1} else if zrem == 15 {zd + 1} else {zd} as f32,
         );
 
-        requires_meshing.sort_by(|a, b| (a - xyz).magnitude().partial_cmp(&(b - xyz).magnitude()).unwrap());
+        requires_meshing.iter().collect::<Vec<&Vector3<i32>>>().sort_by(|a, b| (a.map(|v| v as f32) - xyz).magnitude().partial_cmp(&(b.map(|v| v as f32) - xyz).magnitude()).unwrap());
 
         for v in requires_meshing {
             self.update_queue.update_chunk_mesh(Vector3::new(v.x as i32, v.y as i32, v.z as i32));
@@ -409,34 +407,23 @@ impl ChunkManager {
         let zd = abs.z.div_euclid(16);
         let yd = abs.y.div_euclid(16);
 
-        //gets the adjacent chunks, including itself :)
-        let mut requires_meshing = (xd - 1..=xd + 1).map(|x| {
-            (zd - 1..=zd + 1).map(move |z| {
-                (0..16).map(move |y| {
-                    Vector3::new(x as f32, y as f32, z as f32)
-                })
-                
-            }).flatten()
-        }).flatten().collect::<Vec<Vector3<f32>>>();
-
-        let requires_meshing_light = (xd - 1..=xd + 1).map(|x| {
-            (zd - 1..=zd + 1).map(move |z| {
-                (x, z)
-            })
-        }).flatten();
-
         drop(chunk);
 
-        self.flood_lights_from_placed(abs, block_clone);
+        let mut requires_meshing = self.flood_lights_from_placed(abs, block_clone);
 
-        // requires_meshing_light.for_each(|v| {
-        //     let index = xz_to_index(v.0, v.1);
+        let additional = vec![
+            Vector3::new(xd + 1, yd, zd),
+            Vector3::new(xd - 1, yd, zd),
+            Vector3::new(xd, yd + 1, zd),
+            Vector3::new(xd, yd - 1, zd),
+            Vector3::new(xd, yd, zd + 1),
+            Vector3::new(xd, yd, zd - 1),
+            Vector3::new(xd, yd, zd)
+        ];
 
-        //     let chunk = self.chunks.get(&index);
-        //     if chunk.is_none() {return};
-
-        //     self.update_queue.update_chunk_lighting(Vector2::new(v.0, v.1));
-        // });
+        for v in additional {
+            requires_meshing.insert(v);
+        }
 
         let xyz: Vector3<f32> = Vector3::new(
             if local.x == 0 {xd - 1} else if local.x == 15 {xd + 1} else {xd} as f32,
@@ -444,7 +431,7 @@ impl ChunkManager {
             if local.z == 0 {zd - 1} else if local.z == 15 {zd + 1} else {zd} as f32,
         );
 
-        requires_meshing.sort_by(|a, b| (a - xyz).magnitude().partial_cmp(&(b - xyz).magnitude()).unwrap());
+        requires_meshing.iter().collect::<Vec<&Vector3<i32>>>().sort_by(|a, b| (a.map(|v| v as f32) - xyz).magnitude().partial_cmp(&(b.map(|v| v as f32) - xyz).magnitude()).unwrap());
 
         for v in requires_meshing {
             self.update_queue.update_chunk_mesh(Vector3::new(v.x as i32, v.y as i32, v.z as i32));
@@ -466,24 +453,28 @@ impl ChunkManager {
 
         if let Some(chunk) = chunk_raw {
             let mut write = chunk.write().unwrap();
-
             write.modify_block_at(xmod, y, zmod, callback);
         }
     }
 
-    pub fn flood_lights_from_placed(&mut self, pos: Vector3<i32>, current: BlockType) {
-        let mut queue = VecDeque::new();
-        
-        queue.push_back(current);
+    pub fn flood_lights_from_placed(&mut self, pos: Vector3<i32>, current: BlockType) -> HashSet<Vector3<i32>> {
+        let mut set = HashSet::new();
+        let mut queue: VecDeque<LightingBFSRemoveNode> = VecDeque::new();
+        let mut prop_queue: VecDeque<LightingBFSAddNode> = VecDeque::new();
+        set.insert(Vector3::new(pos.x.div_euclid(16), pos.y.div_euclid(16), pos.z.div_euclid(16)));
+        ChunkManager::modify_block_at(pos.x, pos.y as u32, pos.z, &self.chunks, |v| {
+            v.set_sunlight_intensity(0);
+        });
+
+        queue.push_back(LightingBFSRemoveNode {
+            position: pos,
+            intensity: current.get_sunlight_intensity()
+        });
 
         while queue.len() > 0 {
-            let block = queue.pop_front().unwrap();
-            let pos = block.get_absolute_position();
-            let intensity = block.get_sunlight_intensity();
-
-            if intensity == 0 {
-                continue;
-            }
+            let item = queue.pop_front().unwrap();
+            let pos = item.position;
+            let intensity = item.intensity;
 
             let adj = [
                 get_block_at_absolute_cloned(pos.x + 1, pos.y, pos.z, &self.chunks),
@@ -495,65 +486,34 @@ impl ChunkManager {
             ];
 
             adj.map(|v| {
-
                 if let Some(x) = v {
-                    let pos = x.get_absolute_position();
-                    let mut n = 0;
-                    let mut highest_light = 0;
-
-                    let adj = [
-                        get_block_at_absolute_cloned(pos.x + 1, pos.y, pos.z, &self.chunks),
-                        get_block_at_absolute_cloned(pos.x - 1, pos.y, pos.z, &self.chunks),
-                        get_block_at_absolute_cloned(pos.x, pos.y, pos.z + 1, &self.chunks),
-                        get_block_at_absolute_cloned(pos.x, pos.y, pos.z - 1, &self.chunks),
-                        get_block_at_absolute_cloned(pos.x, pos.y + 1, pos.z, &self.chunks),
-                        get_block_at_absolute_cloned(pos.x, pos.y - 1, pos.z, &self.chunks),
-                    ];
-
-                    adj.map(|v| {
-                        if let Some(z) = v {
-                            let i = z.get_sunlight_intensity();
-                            if i >= intensity {
-                                
-                                n += 1;
-                                if i > highest_light && z.get_absolute_position() != pos {
-                                    highest_light = i;
-                                }
-                            }
-                        }
-                    });
-
-                    //more than 1 block with higher light.
-                    if n > 1 {
-                        ChunkManager::modify_block_at(pos.x, pos.y as u32, pos.z, &self.chunks, |v| {
-                            v.set_sunlight_intensity(highest_light - 1);
+                    let pos2 = x.get_absolute_position();
+                    let i = x.get_sunlight_intensity();
+                    
+                    if (i < intensity && i != 0) || (intensity == 15 && pos2.y == pos.y - 1) {
+                        ChunkManager::modify_block_at(pos2.x, pos2.y as u32, pos2.z, &self.chunks, |v| {
+                            v.set_sunlight_intensity(0);
+                        });
+                        queue.push_back(LightingBFSRemoveNode {
+                            position: pos2,
+                            intensity: i
+                        });
+                        set.insert(Vector3::new(pos2.x.div_euclid(16), pos2.y.div_euclid(16), pos2.z.div_euclid(16)));
+                    }
+                    else if i >= intensity {
+                        prop_queue.push_back(LightingBFSAddNode {
+                            position: pos2
                         });
                     }
-                    else {
-
-                    }
                 }
-
-                
             });
         }
-    }
 
-    pub fn flood_lights_from_broken(&mut self, pos: Vector3<i32>, previous: BlockType) {
-        let mut queue = VecDeque::new();
-        ChunkManager::modify_block_at(pos.x, pos.y as u32, pos.z, &self.chunks, |v| {
-            v.set_sunlight_intensity(previous.get_sunlight_intensity());
-        });
-        queue.push_back(get_block_at_absolute_cloned(pos.x, pos.y, pos.z, &self.chunks).unwrap());
-
-        while queue.len() > 0 {
-            let block = queue.pop_front().unwrap();
-            let pos = block.get_absolute_position();
+        while prop_queue.len() > 0 {
+            let item = prop_queue.pop_front().unwrap();
+            let pos = item.position;
+            let block = get_block_at_absolute_cloned(pos.x, pos.y, pos.z, &self.chunks).unwrap();
             let intensity = block.get_sunlight_intensity();
-            //no reason to propogate at 0 intensity
-            if intensity == 0 {
-                continue;
-            }
 
             [
                 get_block_at_absolute_cloned(pos.x + 1, pos.y, pos.z, &self.chunks),
@@ -564,16 +524,9 @@ impl ChunkManager {
                 get_block_at_absolute_cloned(pos.x, pos.y - 1, pos.z, &self.chunks),
             ].map(|v| {
                 if let Some(x) = v {
-                    if x.get_sunlight_intensity() < intensity - 1 {
+                    if x.get_sunlight_intensity() + 2 <= intensity && x.has_partial_transparency() {
                         let xp = x.get_absolute_position();
-                        let rel = x.get_relative_position();
-                        let chunk = self.chunks.get(&xz_to_index(xp.x.div_euclid(16), xp.z.div_euclid(16))).unwrap().read().unwrap();
-                        //let highest = chunk.get_heighest_transparent_y(rel.x, rel.z) as i32;
-
-                        drop(chunk);
-
                         if intensity == 15 && xp.y == pos.y - 1 {
-                            //no locking please :(
                             ChunkManager::modify_block_at(xp.x, xp.y as u32, xp.z, &self.chunks, |v| {
                                 v.set_sunlight_intensity(15);
                             });
@@ -583,19 +536,83 @@ impl ChunkManager {
                                 v.set_sunlight_intensity(intensity - 1);
                             });
                         }
-
-                        //we only want light to propogate via air / transparent blocks
-                        if x.has_partial_transparency() {
-                            queue.push_back(get_block_at_absolute_cloned(xp.x, xp.y, xp.z, &self.chunks).unwrap());
-                        }
+                        set.insert(Vector3::new(xp.x.div_euclid(16), xp.y.div_euclid(16), xp.z.div_euclid(16)));
+                        prop_queue.push_back(LightingBFSAddNode {
+                            position: xp
+                        });
                     }
                 }
             });
         }
+        set
     }
 
-    pub fn flood_lights(&mut self, chunk_index: u32) {
+    pub fn flood_lights_from_broken(&mut self, pos: Vector3<i32>, previous: BlockType, surface_height_previous: u32) -> HashSet<Vector3<i32>> {
+        let mut queue: VecDeque<LightingBFSAddNode> = VecDeque::new();
+        let mut set = HashSet::new();
+        let max_intensity_around = [
+            get_block_at_absolute_cloned(pos.x + 1, pos.y, pos.z, &self.chunks),
+            get_block_at_absolute_cloned(pos.x - 1, pos.y, pos.z, &self.chunks),
+            get_block_at_absolute_cloned(pos.x, pos.y, pos.z + 1, &self.chunks),
+            get_block_at_absolute_cloned(pos.x, pos.y, pos.z - 1, &self.chunks),
+            get_block_at_absolute_cloned(pos.x, pos.y + 1, pos.z, &self.chunks),
+            get_block_at_absolute_cloned(pos.x, pos.y - 1, pos.z, &self.chunks),
+        ].into_iter().filter_map(|v| Some(v?.get_sunlight_intensity())).max().unwrap();
+        let gi = get_block_at_absolute_cloned(pos.x, pos.y + 1, pos.z, &self.chunks).unwrap().get_sunlight_intensity();
+        ChunkManager::modify_block_at(pos.x, pos.y as u32, pos.z, &self.chunks, |v| {
+            v.set_sunlight_intensity(
+                if max_intensity_around == 0 {0} 
+                else {
+                    if gi == max_intensity_around {max_intensity_around} 
+                    else {max_intensity_around - 1}
+                }
+            );
+        });
+        
+        queue.push_back(LightingBFSAddNode {
+            position: pos
+        });
+        set.insert(Vector3::new(pos.x.div_euclid(16), pos.y.div_euclid(16), pos.z.div_euclid(16)));
 
+        while queue.len() > 0 {
+            let item = queue.pop_front().unwrap();
+            let pos = item.position;
+            let block = get_block_at_absolute_cloned(pos.x, pos.y, pos.z, &self.chunks).unwrap();
+            let intensity = block.get_sunlight_intensity();
+
+            [
+                get_block_at_absolute_cloned(pos.x + 1, pos.y, pos.z, &self.chunks),
+                get_block_at_absolute_cloned(pos.x - 1, pos.y, pos.z, &self.chunks),
+                get_block_at_absolute_cloned(pos.x, pos.y, pos.z + 1, &self.chunks),
+                get_block_at_absolute_cloned(pos.x, pos.y, pos.z - 1, &self.chunks),
+                get_block_at_absolute_cloned(pos.x, pos.y + 1, pos.z, &self.chunks),
+                get_block_at_absolute_cloned(pos.x, pos.y - 1, pos.z, &self.chunks),
+            ].map(|v| {
+                if let Some(x) = v {
+                    if x.get_sunlight_intensity() + 2 <= intensity && x.has_partial_transparency() {
+                        let xp = x.get_absolute_position();
+                        if intensity == 15 && xp.y == pos.y - 1 {
+                            ChunkManager::modify_block_at(xp.x, xp.y as u32, xp.z, &self.chunks, |v| {
+                                v.set_sunlight_intensity(15);
+                            });
+                        }
+                        else {
+                            ChunkManager::modify_block_at(xp.x, xp.y as u32, xp.z, &self.chunks, |v| {
+                                v.set_sunlight_intensity(intensity - 1);
+                            });
+                        }
+                        set.insert(Vector3::new(xp.x.div_euclid(16), xp.y.div_euclid(16), xp.z.div_euclid(16)));
+                        queue.push_back(LightingBFSAddNode {
+                            position: xp
+                        });
+                    }
+                }
+            });
+        }
+        set
+    }
+
+    pub fn flood_lights(&mut self, chunk_index: u32){
         let c = self.chunks.get(&chunk_index).unwrap().read().unwrap();
         
         let ax = c.position.x;
@@ -607,29 +624,32 @@ impl ChunkManager {
             for z in 0..16 {
                 for y in (0..=255).rev() {
 
-                    let block = get_block_at_absolute_cloned(x + ax * 16, y, z + az * 16, &self.chunks).unwrap();
+                    //set sunlight intensity of all transparent blocks above the surface to be 15
 
+                    ChunkManager::modify_block_at(x + ax * 16, y as u32, z + az * 16, &self.chunks, |v| {
+                        v.set_sunlight_intensity(15);
+                    });
+
+                    let block = get_block_at_absolute_cloned(x + ax * 16, y, z + az * 16, &self.chunks).unwrap();
+                    
                     let block_below = get_block_at_absolute_cloned(x + ax * 16, y - 1, z + az * 16, &self.chunks);
                     //if it is the first solid block hit(for light)...
                     if block.has_partial_transparency() && block_below.is_some() && !block_below.unwrap().has_partial_transparency() {
                         //start spreading light...
-                        let mut queue = VecDeque::new();
+                        let mut queue: VecDeque<LightingBFSAddNode>  = VecDeque::new();
 
-                        ChunkManager::modify_block_at(x + ax * 16, y as u32, z + az * 16, &self.chunks, |v| {
-                            v.set_sunlight_intensity(15);
-                        });
+                        
                         //we'll get the updated block
                         let block = get_block_at_absolute_cloned(x + ax * 16, y, z + az * 16, &self.chunks).unwrap();
-                        queue.push_back(block);
+                        queue.push_back(LightingBFSAddNode {
+                            position: block.get_absolute_position()
+                        });
 
                         while queue.len() > 0 {
-                            let block = queue.pop_front().unwrap();
-                            let pos = block.get_absolute_position();
+                            let item = queue.pop_front().unwrap();
+                            let pos = item.position;
+                            let block = get_block_at_absolute_cloned(pos.x, pos.y, pos.z, &self.chunks).unwrap();
                             let intensity = block.get_sunlight_intensity();
-                            //no reason to propogate at 0 intensity
-                            if intensity == 0 {
-                                continue;
-                            }
 
                             [
                                 get_block_at_absolute_cloned(pos.x + 1, pos.y, pos.z, &self.chunks),
@@ -640,7 +660,7 @@ impl ChunkManager {
                                 get_block_at_absolute_cloned(pos.x, pos.y - 1, pos.z, &self.chunks),
                             ].map(|v| {
                                 if let Some(x) = v {
-                                    if x.get_sunlight_intensity() < intensity - 1 {
+                                    if x.get_sunlight_intensity() + 2 <= intensity && x.has_partial_transparency() {
                                         let xp = x.get_absolute_position();
                                         if intensity == 15 && xp.y == pos.y - 1 {
                                             ChunkManager::modify_block_at(xp.x, xp.y as u32, xp.z, &self.chunks, |v| {
@@ -652,11 +672,9 @@ impl ChunkManager {
                                                 v.set_sunlight_intensity(intensity - 1);
                                             });
                                         }
-
-                                        //we only want light to propogate via air / transparent blocks
-                                        if x.has_partial_transparency() {
-                                            queue.push_back(get_block_at_absolute_cloned(xp.x, xp.y, xp.z, &self.chunks).unwrap());
-                                        }
+                                        queue.push_back(LightingBFSAddNode {
+                                            position: xp
+                                        });
                                     }
                                 }
                             });

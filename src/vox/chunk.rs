@@ -12,13 +12,11 @@ use crate::{blocks::{airblock::AirBlock, block::{Block, BlockType, Blocks}, dirt
 use super::worldgen::generate_surface_height;
 
 #[cached]
-#[inline]
 pub fn local_xyz_to_index(x: u32, y: u32, z: u32) -> u32 {
     ((z * 16 * 16) + (y * 16) + x) as u32
 }
 
 #[cached]
-#[inline]
 pub fn xz_to_index(x: i32, z: i32) -> u32 {
     let x0 = if x >= 0 {2 * x} else {-2 * x - 1}; //converting integers to natural numbers
     let z0 = if z >= 0 {2 * z} else {-2 * z - 1};
@@ -219,18 +217,18 @@ impl Chunk {
             slice_vertex_buffers
         }
     }
-    #[inline]
+
     pub fn get_block_at(&self, x: u32, y: u32, z: u32) -> &BlockType {
         &self.grid[(y / 16) as usize][local_xyz_to_index(x % 16, y % 16, z % 16) as usize]
     }
-    #[inline]
-    pub fn get_heighest_transparent_y(&self, x: u32, z: u32) -> u32 {
-        for y in (0..=255).rev() {
+
+    pub fn get_surface_block_y(&self, x: u32, z: u32) -> u32 {
+        for y in (1..=255).rev() {
             let ys = y / 16;
             
             let block = &self.grid[ys as usize][local_xyz_to_index(x, y % 16, z) as usize];
 
-            if block.has_partial_transparency() {
+            if !block.has_partial_transparency() {
                 return y;
             }
         }
@@ -261,7 +259,7 @@ impl Chunk {
     pub fn get_transparent_buffers(&self) -> &Vec<(wgpu::Buffer, wgpu::Buffer, u32)> {
         &self.transparent_buffers
     }
-    #[inline]
+
     pub fn modify_block_at<F>(&mut self, x: u32, y: u32, z: u32, mut callback: F) where F: FnMut(&mut BlockType) {
         callback(&mut self.grid[(y / 16) as usize][local_xyz_to_index(x % 16, y % 16, z % 16) as usize]);
     }
