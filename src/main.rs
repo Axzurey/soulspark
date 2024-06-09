@@ -74,7 +74,7 @@ async fn main() {
         let cloned_label = text_label.clone();
 
         workspace.input_service.on_mouse_click.connect(move |(btn, _)| {
-
+            println!("PRE");
             let lock = &mut wa.write().unwrap();
 
             let p = lock.current_camera.position;
@@ -100,6 +100,8 @@ async fn main() {
                         ));
 
                         lock.chunk_manager.action_queue.place_block(target_block);
+
+                        println!("PLACED");
                     }
                 },
                 None => {
@@ -141,6 +143,7 @@ async fn main() {
         let chunk_update_thread = std::thread::spawn(move || {
             while let Ok((chunk_x, chunk_z, y_slice, chunks)) = chunkget.recv() {
                 let t = Stopwatch::start_new();
+                println!("STM");
                 let result = mesh_slice_arrayed(chunk_x, chunk_z, y_slice, &chunks);
                 println!("Meshed {}ms", t.elapsed_ms());
                 meshedsend.send((chunk_x, chunk_z, y_slice, result)).unwrap();

@@ -1,15 +1,15 @@
 use cgmath::Vector3;
 
-use crate::{blocks::{airblock::AirBlock, block::{Block, Blocks}}, vox::chunk_manager::{get_block_at_absolute_cloned, ChunkManager}};
+use crate::{blocks::{airblock::AirBlock, block::{Block, BlockType, Blocks}}, vox::chunk_manager::{get_block_at_absolute, ChunkManager}};
 
 pub struct BlockRaycastResult {
-    pub hit: Box<dyn Block + Send + Sync>,
+    pub hit: BlockType,
     pub normal: Vector3<i32>,
     pub position: Vector3<f32>
 }
 
 pub fn raycast_blocks<I>(from: Vector3<f32>, direction: Vector3<f32>, distance: f32, chunk_manager: &ChunkManager, ignore: I) -> Option<BlockRaycastResult>
-    where I: Fn(&Box<dyn Block + Send + Sync>) -> bool
+    where I: Fn(&BlockType) -> bool
 {
     //based on http://www.cse.yorku.ca/~amana/research/grid.pdf + https://github.com/fenomas/fast-voxel-raycast/blob/master/index.js
     let mut traversed: f32 = 0.;
@@ -56,15 +56,15 @@ pub fn raycast_blocks<I>(from: Vector3<f32>, direction: Vector3<f32>, distance: 
             stepped_index = 2;
         }
 
-        let block = get_block_at_absolute_cloned(ix, iy, iz, &chunk_manager.chunks);
+        let block = get_block_at_absolute(ix, iy, iz, &chunk_manager.chunks);
 
-        match block.clone() {
+        match block {
             Some(b) => {
                 if b.get_block() != Blocks::AIR {
                     if !ignore(&b) {
                         //println!("{:?}, \n{:?}", from + direction * traversed, Vector3::new(x, y, z));
                         return Some(BlockRaycastResult {
-                            hit: b,
+                            hit: b.as_ref().clone(),
                             position: from + direction * traversed,
                             normal: Vector3::new(
                                 if stepped_index == 0 {-step_x} else {0},
