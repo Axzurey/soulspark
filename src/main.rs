@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::ops::DerefMut;
 use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{mpsc, Arc, RwLock};
-
+use std::sync::{mpsc, Arc};
+use parking_lot::RwLock;
 use blocks::stoneblock::StoneBlock;
 use cgmath::{Point3, Vector3};
 use engine::surfacevertex::SurfaceVertex;
@@ -36,12 +36,21 @@ mod gui;
 mod blocks;
 mod util;
 
-async fn dosomth(x: &u32) {
-    
-}
-
 #[tokio::main()]
 async fn main() {
+
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        for deadlock in parking_lot::deadlock::check_deadlock() {
+            for deadlock in deadlock {
+                println!(
+                    "Found a deadlock! {}:\n{:?}",
+                    deadlock.thread_id(),
+                    deadlock.backtrace()
+                );
+            }
+        }
+    });
 
     let a: Arc<Vec<u32>> = Arc::new(Vec::new());
 
@@ -61,7 +70,7 @@ async fn main() {
         window.clone()
     )));
 
-    let mut workspace = workspace_arc.write().unwrap();
+    let mut workspace = workspace_arc.write();
 
     workspace.chunk_manager.generate_chunks(&gamewindow.device);
     workspace.chunk_manager.generate_chunk_illumination();
@@ -75,7 +84,7 @@ async fn main() {
 
         workspace.input_service.on_mouse_click.connect(move |(btn, _)| {
             println!("PRE");
-            let lock = &mut wa.write().unwrap();
+            let lock = &mut wa.write();
 
             let p = lock.current_camera.position;
 
@@ -101,14 +110,13 @@ async fn main() {
 
                         lock.chunk_manager.action_queue.place_block(target_block);
 
-                        println!("PLACED");
+                        println!("PLACED, {:?}", target_block_pos);
                     }
                 },
                 None => {
                     
                 }
             }
-            //println doesn't flush in another thread...
         });
     }
 
@@ -155,7 +163,7 @@ async fn main() {
         let wa = workspace_arc.clone();
         workspace.input_service.on_key_pressed.connect(move |(code, _)| {
             
-            let lock = &mut wa.write().unwrap().input_service;
+            let lock = &mut wa.write().input_service;
             if code == KeyCode::KeyX {
                 match lock.get_mouse_lock_state() {
                     MouseLockState::Free => {
@@ -192,7 +200,7 @@ async fn main() {
                 
             },
             Event::DeviceEvent {event: DeviceEvent::MouseMotion { delta }, device_id } => {
-                let mut workspace = workspace_arc.write().unwrap();
+                let mut workspace = workspace_arc.write();
                 workspace.current_camera.controller.process_mouse_input(delta.0, delta.1);
             },
             Event::WindowEvent {
@@ -201,7 +209,7 @@ async fn main() {
             } => {
                 if window_id == window.id() {
                     let consumed = gamewindow.gui_renderer.handle_input(gamewindow.window.clone(), event);
-                    let mut workspace = workspace_arc.write().unwrap();
+                    let mut workspace = workspace_arc.write();
                     match event {
                         WindowEvent::KeyboardInput { device_id, event, is_synthetic } => {
                             match event.physical_key {
@@ -233,7 +241,7 @@ async fn main() {
                                 workspace.chunk_manager.on_frame_action(&gamewindow.device, &chunksend);
                                 workspace.input_service.update();
 
-                                
+                                println!("SI");
                                 for i in 0..15 {
                                     if let Ok(res) = meshedget.try_recv() {
                                         let at = Vector3::new(res.0, res.2 as i32, res.1);
@@ -241,12 +249,15 @@ async fn main() {
                                         if let Some(i) = index {
                                             workspace.chunk_manager.unresolved_meshes.swap_remove(i);
                                         }
+                                        println!("O");
                                         workspace.chunk_manager.finalize_mesh(res.0, res.1, res.2, &gamewindow.device, res.3);
+                                        println!("O2");
                                     }
                                     else {
                                         break;
                                     }
                                 }
+                                println!("FI");
                             }
                         }
                         _ => {}

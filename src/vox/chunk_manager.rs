@@ -1,8 +1,8 @@
-use std::{collections::{HashMap, HashSet, VecDeque}, sync::{mpsc::Sender, Arc, RwLock, RwLockReadGuard}, thread};
-
+use std::{collections::{HashMap, HashSet, VecDeque}, sync::{mpsc::Sender, Arc}, thread};
+use owning_ref::{OwningRef, RwLockReadGuardRef};
+use parking_lot::{RwLock, RwLockReadGuard, };
 use cgmath::{InnerSpace, Vector2, Vector3};
 use noise::Perlin;
-use owning_ref::{OwningRef, RwLockReadGuardRef};
 use rand::{RngCore, SeedableRng};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use stopwatch::Stopwatch;
@@ -34,17 +34,17 @@ pub struct ChunkManager {
     pub unresolved_meshes: Vec<Vector3<i32>>
 }
 
-pub fn get_block_at_absolute(x: i32, y: i32, z: i32, chunks: &HashMap<u32, Arc<RwLock<Chunk>>>) -> Option<RwLockReadGuardRef<Chunk, BlockType>> {
+pub fn get_block_at_absolute(x: i32, y: i32, z: i32, chunks: &HashMap<u32, Arc<RwLock<Chunk>>>) -> Option<OwningRef<parking_lot::lock_api::RwLockReadGuard<parking_lot::RawRwLock, Chunk>, BlockType>> {
     if y < 0 || y > 255 {return None};
     let chunk_x = x.div_euclid(16);
     let chunk_z = z.div_euclid(16);
 
-    let val: RwLockReadGuardRef<Chunk, BlockType> = RwLockReadGuardRef::new(chunks.get(&xz_to_index(chunk_x, chunk_z))?.read().unwrap()).map(|v| v.get_block_at(x.rem_euclid(16) as u32, y as u32, z.rem_euclid(16) as u32));
+    let val: OwningRef<parking_lot::lock_api::RwLockReadGuard<parking_lot::RawRwLock, Chunk>, BlockType> = OwningRef::new(chunks.get(&xz_to_index(chunk_x, chunk_z))?.read_recursive()).map(|v| v.get_block_at(x.rem_euclid(16) as u32, y as u32, z.rem_euclid(16) as u32));
     Some(val)
 }
 
 pub fn mesh_slice_arrayed(chunk_x: i32, chunk_z: i32, y_slice: u32, chunks: &HashMap<u32, Arc<RwLock<Chunk>>>) -> ((Vec<SurfaceVertex>, Vec<u32>, u32), (Vec<SurfaceVertex>, Vec<u32>, u32)) {
-    //let chunk = &chunks[&xz_to_index(chunk_x, chunk_z)].read().unwrap();
+    //let chunk = &chunks[&xz_to_index(chunk_x, chunk_z)].read();
     
     let mut vertices: Vec<SurfaceVertex> = Vec::with_capacity(16 * 16 * 16 * 6 * 4);
     let mut indices: Vec<u32> = Vec::with_capacity(16 * 16 * 16 * 6 * 6);
@@ -55,6 +55,16 @@ pub fn mesh_slice_arrayed(chunk_x: i32, chunk_z: i32, y_slice: u32, chunks: &Has
     let mut vertices_transparent: Vec<SurfaceVertex> = Vec::with_capacity(16 * 16 * 16 * 6 * 4);
     let mut indices_transparent: Vec<u32> = Vec::with_capacity(16 * 16 * 16 * 6 * 6);
 
+    println!("Started slice");
+
+    //below is no longer needed due to read_recursive
+    //to prevent deadlocking(probably) :(
+    // let locks = (chunk_x - 1..=chunk_x + 1).flat_map(|x| {
+    //     (chunk_z - 1..=chunk_z + 1).map(|z| {
+    //         chunks.get(&xz_to_index(x, z)).map(|v| v.read_recursive())
+    //     })
+    // });
+
     for x in 0..16 {
         for z in 0..16 {
             let abs_x = x as i32 + rel_abs_x;
@@ -62,12 +72,13 @@ pub fn mesh_slice_arrayed(chunk_x: i32, chunk_z: i32, y_slice: u32, chunks: &Has
 
             for yt in y_start..y_end {
                 let y = yt % 16;
-                let block_at = get_block_at_absolute(abs_x, yt as i32, abs_z, chunks).unwrap();//&chunk.grid[(yt / 16) as usize][local_xyz_to_index(x, y, z) as usize];
+
+                let block_at = get_block_at_absolute(abs_x, yt as i32, abs_z, chunks).unwrap();
 
                 if !block_at.does_mesh() || block_at.get_block() == Blocks::AIR {
                     continue;
                 }
-
+                
                 let neighbors = [
                     get_block_at_absolute(abs_x, yt as i32, abs_z + 1, &chunks),
                     get_block_at_absolute(abs_x, yt as i32, abs_z - 1, &chunks),
@@ -179,6 +190,8 @@ pub fn mesh_slice_arrayed(chunk_x: i32, chunk_z: i32, y_slice: u32, chunks: &Has
         }
     }
 
+    println!("Finished slice");
+
     let ilen = indices.len() as u32;
     let itlen = indices_transparent.len() as u32;
 
@@ -199,7 +212,7 @@ impl ChunkManager {
 
         Self {
             chunks: HashMap::new(),
-            render_distance: 10,
+            render_distance: 2,
             seed: 52352,
             noise_gen: Perlin::new(rand::rngs::StdRng::seed_from_u64(52352).next_u32()),
             action_queue: ChunkActionQueue::new(),
@@ -232,6 +245,7 @@ impl ChunkManager {
         let mut remaining_updates: u32 = 1; //lighting updates per frame.(meshing is sent to another chunk)
         
         while remaining_updates > 0 {
+            println!("I");
             let res = self.update_queue.get_next_action();
             if res.is_none() {break;}
 
@@ -253,6 +267,8 @@ impl ChunkManager {
             }
             println!("E");
         }
+
+        println!("DNE");
         //println!("FRAME: {}ms", t.elapsed_ms());
     }
 
@@ -325,18 +341,18 @@ impl ChunkManager {
         ((vertex_buffer, index_buffer, ilen), ((vertex_buffer_t, index_buffer_t, ilen_t)))
     }
     #[inline]
-    pub fn get_block_at_absolute(&self, x: i32, y: i32, z: i32) -> Option<OwningRef<RwLockReadGuard<Chunk>, BlockType>> {
+    pub fn get_block_at_absolute(&self, x: i32, y: i32, z: i32) -> Option<OwningRef<parking_lot::lock_api::RwLockReadGuard<parking_lot::RawRwLock, Chunk>, BlockType>> {
         if y < 0 || y > 255 {return None};
         let chunk_x = x.div_euclid(16);
         let chunk_z = z.div_euclid(16);
 
-        let val: RwLockReadGuardRef<Chunk, BlockType> = RwLockReadGuardRef::new(self.chunks.get(&xz_to_index(chunk_x, chunk_z))?.read().unwrap()).map(|v| v.get_block_at(x.rem_euclid(16) as u32, y as u32, z.rem_euclid(16) as u32));
+        let val: OwningRef<parking_lot::lock_api::RwLockReadGuard<parking_lot::RawRwLock, Chunk>, BlockType> = OwningRef::new(self.chunks.get(&xz_to_index(chunk_x, chunk_z))?.read_recursive()).map(|v| v.get_block_at(x.rem_euclid(16) as u32, y as u32, z.rem_euclid(16) as u32));
         Some(val)
     }
 
     pub fn break_block(&mut self, device: &wgpu::Device, x: i32, y: u32, z: i32) {
         let index = xz_to_index(x.div_euclid(16), z.div_euclid(16));
-        let mut chunk = self.chunks.get_mut(&index).unwrap().write().unwrap();
+        let mut chunk = self.chunks.get_mut(&index).unwrap().write();
 
         let xrem = x.rem_euclid(16) as u32;
         let zrem = z.rem_euclid(16) as u32;
@@ -397,7 +413,11 @@ impl ChunkManager {
 
         let local = block.get_relative_position();
 
-        let mut chunk = self.chunks.get_mut(&index).unwrap().write().unwrap();
+        println!("Pre1");
+
+        let mut chunk = self.chunks.get_mut(&index).unwrap().write();
+
+        println!("Post1");
 
         let previous = chunk.grid[(abs.y / 16) as usize][local_xyz_to_index(local.x, local.y, local.z) as usize].clone();
 
@@ -412,8 +432,10 @@ impl ChunkManager {
 
         drop(chunk);
 
-        let mut requires_meshing = self.flood_lights_from_placed(abs, block_clone);
+        println!("F");
 
+        let mut requires_meshing = self.flood_lights_from_placed(abs, block_clone);
+        println!("C");
         let additional = vec![
             Vector3::new(xd + 1, yd, zd),
             Vector3::new(xd - 1, yd, zd),
@@ -455,17 +477,18 @@ impl ChunkManager {
         let chunk_raw = chunks.get(&xz);
 
         if let Some(chunk) = chunk_raw {
-            let mut write = chunk.write().unwrap();
+            let mut write = chunk.write();
             write.modify_block_at(xmod, y, zmod, callback);
         }
     }
 
     pub fn flood_lights_from_placed(&mut self, pos: Vector3<i32>, current: BlockType) -> HashSet<Vector3<i32>> {
+        println!("0.0");
         let mut set = HashSet::new();
         let mut queue: VecDeque<LightingBFSRemoveNode> = VecDeque::new();
         let mut prop_queue: VecDeque<LightingBFSAddNode> = VecDeque::new();
         set.insert(Vector3::new(pos.x.div_euclid(16), pos.y.div_euclid(16), pos.z.div_euclid(16)));
-
+        println!("0");
         ChunkManager::modify_block_at(pos.x, pos.y as u32, pos.z, &self.chunks, |v| {
             v.set_sunlight_intensity(0);
         });
@@ -629,7 +652,7 @@ impl ChunkManager {
     }
 
     pub fn flood_lights(&mut self, chunk_index: u32){
-        let c = self.chunks.get(&chunk_index).unwrap().read().unwrap();
+        let c = self.chunks.get(&chunk_index).unwrap().read();
         
         let ax = c.position.x;
         let az = c.position.y;
@@ -752,7 +775,7 @@ impl ChunkManager {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        let mut chunk = self.chunks.get_mut(&xz_to_index(x, z)).unwrap().write().unwrap();
+        let mut chunk = self.chunks.get_mut(&xz_to_index(x, z)).unwrap().write();
 
         chunk.set_solid_buffer(slice, (vertex_buffer, index_buffer, ilen));
         chunk.set_transparent_buffer(slice, (vertex_buffer_t, index_buffer_t, ilen_t));
@@ -760,7 +783,7 @@ impl ChunkManager {
     }
 
     pub fn mesh_chunk(&mut self, device: &wgpu::Device, index: u32) {
-        let chunk = self.chunks.get(&index).unwrap().read().unwrap();
+        let chunk = self.chunks.get(&index).unwrap().read();
 
         let slices = (0..16).into_iter();
         
@@ -775,7 +798,7 @@ impl ChunkManager {
 
         drop(chunk);
 
-        let mut rechunk = self.chunks.get_mut(&index).unwrap().write().unwrap();
+        let mut rechunk = self.chunks.get_mut(&index).unwrap().write();
         
         rechunk.set_solid_buffers(v0);
         rechunk.set_transparent_buffers(v1);

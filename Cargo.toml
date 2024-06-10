@@ -37,6 +37,7 @@ glam = "0.27.0"
 getset = "0.1.2"
 egui_extras = "0.27.2"
 owning_ref = "0.4.1"
+parking_lot = {version = "0.12.3", features = ["deadlock_detection", "owning_ref"]}
 
 [build-dependencies]
 anyhow = "1.0"

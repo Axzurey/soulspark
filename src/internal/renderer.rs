@@ -530,7 +530,7 @@ impl MainRenderer {
         workspace: &Workspace
     ) {
         let t = Stopwatch::start_new();
-        let mut locks: Vec<RwLockReadGuard<Chunk>> = Vec::new();
+        let mut locks = Vec::new();
         
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("object render pass"),
@@ -567,7 +567,7 @@ impl MainRenderer {
         render_pass.set_bind_group(1, camera_bindgroup, &[]);
 
         for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
-            let read = chunk.read().unwrap();
+            let read = chunk.read();
             locks.push(read);
         }
 
@@ -595,7 +595,7 @@ impl MainRenderer {
         }
         drop(render_pass);
 
-        let mut locks: Vec<RwLockReadGuard<Chunk>> = Vec::new();
+        let mut locks = Vec::new();
 
         let mut transparency_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("transparent render pass"),
@@ -623,7 +623,7 @@ impl MainRenderer {
         transparency_render_pass.set_bind_group(1, camera_bindgroup, &[]);
 
         for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
-            let read = chunk.read().unwrap();
+            let read = chunk.read();
             locks.push(read);
         }
         
