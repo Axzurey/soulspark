@@ -4,7 +4,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, Arc};
 use parking_lot::RwLock;
 use blocks::stoneblock::StoneBlock;
-use cgmath::{Point3, Vector3};
+use cgmath::{Point3, Vector2, Vector3};
 use engine::surfacevertex::SurfaceVertex;
 use gen::primitive::PrimitiveBuilder;
 use gui::elements::slider::Slider;
@@ -73,7 +73,7 @@ async fn main() {
 
     let (sendmesh, getmesh) = spawn_chunk_meshing_loop(3);
     let (sendchunk, getchunk) = spawn_chunk_creation_loop(4, workspace.chunk_manager.seed);
-    workspace.chunk_manager.generate_chunks(&gamewindow.device, &sendchunk);
+    workspace.chunk_manager.generate_chunks(&gamewindow.device, &sendchunk, Vector2::new(0., 0.));
 
     let text_label = TextLabel::new("h".to_owned(), "hellotext".to_owned());
 
@@ -215,7 +215,7 @@ async fn main() {
                                 workspace.chunk_manager.on_frame_action(&gamewindow.device, &sendmesh);
                                 workspace.input_service.update();
 
-                                for i in 0..15 {
+                                for _ in 0..10 {
                                     if let Ok(res) = getmesh.try_recv() {
                                         let at = Vector3::new(res.0, res.2 as i32, res.1);
                                         let index = workspace.chunk_manager.unresolved_meshes.iter().position(|p| *p == at);
@@ -234,9 +234,9 @@ async fn main() {
                                         workspace.chunk_manager.chunks.insert(xz_to_index(res.0, res.1), res.2);
                                     
                                         if workspace.chunk_manager.chunks.len() as u32 == (workspace.chunk_manager.render_distance * 2 + 1).pow(2) {
-                                            println!("Done chunks");
+                                            println!("Beginning Illumination");
                                             workspace.chunk_manager.generate_chunk_illumination();
-                                            workspace.chunk_manager.mesh_chunks(&gamewindow.device, &sendmesh);
+                                            workspace.chunk_manager.mesh_chunks(&gamewindow.device, &sendmesh, Vector3::new(0., 0., 0.));
                                         }
                                     }
                                     else {

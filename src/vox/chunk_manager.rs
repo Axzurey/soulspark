@@ -1,7 +1,7 @@
 use std::{collections::{HashMap, HashSet, VecDeque}, sync::{mpsc::Sender, Arc}, thread};
 use owning_ref::{OwningRef, RwLockReadGuardRef};
 use parking_lot::{RwLock, RwLockReadGuard, };
-use cgmath::{InnerSpace, Vector2, Vector3};
+use cgmath::{InnerSpace, MetricSpace, Vector2, Vector3};
 use noise::Perlin;
 use rand::{RngCore, SeedableRng};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
@@ -208,9 +208,9 @@ impl ChunkManager {
 
         Self {
             chunks: HashMap::new(),
-            render_distance: 2,
-            seed: 52352,
-            noise_gen: Perlin::new(rand::rngs::StdRng::seed_from_u64(52352).next_u32()),
+            render_distance: 10,
+            seed: 4294967294,
+            noise_gen: Perlin::new(rand::rngs::StdRng::seed_from_u64(4294967294).next_u32()),
             action_queue: ChunkActionQueue::new(),
             update_queue: ChunkActionQueue::new(),
             unresolved_meshes: Vec::new(),
@@ -263,12 +263,17 @@ impl ChunkManager {
         //println!("FRAME: {}ms", t.elapsed_ms());
     }
 
-    pub fn generate_chunks(&mut self, device: &wgpu::Device, send_queue: &Sender<(i32, i32)>) {
-        let t = Stopwatch::start_new();
-        for x in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
-            for z in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
-                send_queue.send((x, z)).unwrap();
-            }
+    pub fn generate_chunks(&mut self, device: &wgpu::Device, send_queue: &Sender<(i32, i32)>, origin: Vector2<f32>) {
+        let mut chunks = (-(self.render_distance as i32)..=(self.render_distance as i32)).flat_map(|x| {
+            (-(self.render_distance as i32)..=(self.render_distance as i32)).map(move |z| {
+                Vector2::new(x as f32, z as f32)
+            })
+        }).collect::<Vec<_>>();
+
+        chunks.sort_by(|a, b| {a.distance(origin).partial_cmp(&b.distance(origin)).unwrap()});
+
+        for chunk in chunks {
+            send_queue.send((chunk.x as i32, chunk.y as i32)).unwrap();
         }
     }
  
@@ -284,18 +289,20 @@ impl ChunkManager {
         println!("Took {} seconds to illuminate all", t.elapsed_ms() / 1000);
     }
 
-    pub fn mesh_chunks(&mut self, device: &wgpu::Device, sendmesh: &Sender<(i32, i32, u32, HashMap<u32, Arc<RwLock<Chunk>>>)>) {
-        let t = Stopwatch::start_new();
-        for x in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
-            for z in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
-                let index = xz_to_index(x, z);
-                for i in 0..16 {
-                    sendmesh.send((x, z, i, self.chunks.clone())).unwrap();
-                }
-                //self.mesh_chunk(device, index);
-            }
+    pub fn mesh_chunks(&mut self, device: &wgpu::Device, sendmesh: &Sender<(i32, i32, u32, HashMap<u32, Arc<RwLock<Chunk>>>)>, origin: Vector3<f32>) {
+        let mut slices = (-(self.render_distance as i32)..=(self.render_distance as i32)).flat_map(|x| {
+            (-(self.render_distance as i32)..=(self.render_distance as i32)).flat_map(move |z| {
+                (0..16).map(move |y| {
+                    Vector3::new(x as f32, y as f32, z as f32)
+                })
+            })
+        }).collect::<Vec<_>>();
+
+        slices.sort_by(|a, b| {a.distance(origin).partial_cmp(&b.distance(origin)).unwrap()});
+
+        for slice in slices {
+            sendmesh.send((slice.x as i32, slice.z as i32, slice.y as u32, self.chunks.clone())).unwrap();
         }
-        println!("Took {} seconds to mesh all", t.elapsed_ms() / 1000);
     }
 
     pub fn mesh_slice(&self, device: &wgpu::Device, chunk: &Chunk, y_slice: u32) -> ((wgpu::Buffer, wgpu::Buffer, u32), (wgpu::Buffer, wgpu::Buffer, u32)) {
@@ -404,11 +411,7 @@ impl ChunkManager {
 
         let local = block.get_relative_position();
 
-        println!("Pre1");
-
         let mut chunk = self.chunks.get_mut(&index).unwrap().write();
-
-        println!("Post1");
 
         let previous = chunk.grid[(abs.y / 16) as usize][local_xyz_to_index(local.x, local.y, local.z) as usize].clone();
 
@@ -423,10 +426,8 @@ impl ChunkManager {
 
         drop(chunk);
 
-        println!("F");
-
         let mut requires_meshing = self.flood_lights_from_placed(abs, block_clone);
-        println!("C");
+
         let additional = vec![
             Vector3::new(xd + 1, yd, zd),
             Vector3::new(xd - 1, yd, zd),
@@ -474,12 +475,10 @@ impl ChunkManager {
     }
 
     pub fn flood_lights_from_placed(&mut self, pos: Vector3<i32>, current: BlockType) -> HashSet<Vector3<i32>> {
-        println!("0.0");
         let mut set = HashSet::new();
         let mut queue: VecDeque<LightingBFSRemoveNode> = VecDeque::new();
         let mut prop_queue: VecDeque<LightingBFSAddNode> = VecDeque::new();
         set.insert(Vector3::new(pos.x.div_euclid(16), pos.y.div_euclid(16), pos.z.div_euclid(16)));
-        println!("0");
         ChunkManager::modify_block_at(pos.x, pos.y as u32, pos.z, &self.chunks, |v| {
             v.set_sunlight_intensity(0);
         });
@@ -488,8 +487,6 @@ impl ChunkManager {
             position: pos,
             intensity: current.get_sunlight_intensity()
         });
-
-        println!("1");
 
         while queue.len() > 0 {
             let item = queue.pop_front().unwrap();
@@ -529,8 +526,6 @@ impl ChunkManager {
                 }
             });
         }
-
-        println!("2");
 
         while prop_queue.len() > 0 {
             let item = prop_queue.pop_front().unwrap();
@@ -770,12 +765,7 @@ impl ChunkManager {
 
         chunk.set_solid_buffer(slice, (vertex_buffer, index_buffer, ilen));
         chunk.set_transparent_buffer(slice, (vertex_buffer_t, index_buffer_t, ilen_t));
-        if chunk.slices_filled < 16 {
-            chunk.slices_filled += 1;
-        }
-        if chunk.slices_filled == 16 {
-            chunk.state = ChunkState::Ready;
-        }
+        chunk.states[slice as usize] = ChunkState::Ready;
 
     }
 

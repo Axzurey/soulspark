@@ -574,14 +574,13 @@ impl MainRenderer {
         let mut outeri = 0;
         for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
             let read = &locks[outeri];
-
-            if read.state != ChunkState::Ready {continue};
             
             let out = read.get_solid_buffers();
 
             let mut i = 0;
 
             for t in out {
+                if read.states[i] != ChunkState::Ready {i += 1; continue};
                 let (vertex_buffer, index_buffer, ilen) = t.as_ref().unwrap();
                 if *ilen == 0 {
                     i += 1;
@@ -635,13 +634,12 @@ impl MainRenderer {
         for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
             let read = &locks[outeri];
 
-            if read.state != ChunkState::Ready {continue};
-
             let out = read.get_transparent_buffers();
 
             let mut i = 0;
 
             for t in out {
+                if read.states[i] != ChunkState::Ready {i += 1; continue};
                 let (vertex_buffer, index_buffer, ilen) = t.as_ref().unwrap();
                 if *ilen == 0 {
                     i += 1;

@@ -63,8 +63,7 @@ pub struct Chunk {
     solid_buffers: Vec<Option<(wgpu::Buffer, wgpu::Buffer, u32)>>,
     transparent_buffers: Vec<Option<(wgpu::Buffer, wgpu::Buffer, u32)>>,
     pub slice_vertex_buffers: Vec<wgpu::Buffer>,
-    pub state: ChunkState,
-    pub slices_filled: u32
+    pub states: Vec<ChunkState>,
 }
 
 impl Chunk {
@@ -220,8 +219,7 @@ impl Chunk {
             solid_buffers,
             transparent_buffers,
             slice_vertex_buffers: Vec::new(),
-            state: ChunkState::RequiresMeshing,
-            slices_filled: 0
+            states: Vec::from_iter(std::iter::repeat(ChunkState::RequiresLighting).take(16)),
         }
     }
 
