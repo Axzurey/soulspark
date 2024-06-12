@@ -5,7 +5,7 @@ use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterato
 use stopwatch::Stopwatch;
 use wgpu::{util::DeviceExt, BindGroupLayout, RenderPipeline, TextureFormat};
 
-use crate::{engine::{surfacevertex::SurfaceVertex, texture::Texture, texture_loader::{initialize_load_textures, preload_textures}, vertex::{ModelVertex, Vertex}}, gen::{object::RawObject, spotlight::{RawSpotLight, Spotlight}}, state::workspace::Workspace, vox::chunk::{Chunk, ChunkDataVertex}};
+use crate::{engine::{surfacevertex::SurfaceVertex, texture::Texture, texture_loader::{initialize_load_textures, preload_textures}, vertex::{ModelVertex, Vertex}}, gen::{object::RawObject, spotlight::{RawSpotLight, Spotlight}}, state::workspace::Workspace, vox::chunk::{Chunk, ChunkDataVertex, ChunkState}};
 
 use super::{renderpipeline::create_render_pipeline, renderstorage::RenderStorage};
 
@@ -574,11 +574,15 @@ impl MainRenderer {
         let mut outeri = 0;
         for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
             let read = &locks[outeri];
+
+            if read.state != ChunkState::Ready {continue};
+            
             let out = read.get_solid_buffers();
 
             let mut i = 0;
 
-            for (vertex_buffer, index_buffer, ilen) in out {
+            for t in out {
+                let (vertex_buffer, index_buffer, ilen) = t.as_ref().unwrap();
                 if *ilen == 0 {
                     i += 1;
                     continue;
@@ -631,11 +635,14 @@ impl MainRenderer {
         for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
             let read = &locks[outeri];
 
+            if read.state != ChunkState::Ready {continue};
+
             let out = read.get_transparent_buffers();
 
             let mut i = 0;
 
-            for (vertex_buffer, index_buffer, ilen) in out {
+            for t in out {
+                let (vertex_buffer, index_buffer, ilen) = t.as_ref().unwrap();
                 if *ilen == 0 {
                     i += 1;
                     continue;

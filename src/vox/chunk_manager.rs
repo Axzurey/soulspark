@@ -10,7 +10,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{blocks::{airblock::AirBlock, block::{calculate_illumination_bytes, Block, BlockFace, BlockType, Blocks}}, engine::surfacevertex::SurfaceVertex, vox::chunkactionqueue::ChunkAction};
 
-use super::{chunk::{local_xyz_to_index, xz_to_index, Chunk, ChunkGridType}, chunkactionqueue::ChunkActionQueue};
+use super::{chunk::{local_xyz_to_index, xz_to_index, Chunk, ChunkGridType, ChunkState}, chunkactionqueue::ChunkActionQueue};
 
 #[derive(PartialEq)]
 struct LightingBFSRemoveNode {
@@ -25,8 +25,8 @@ struct LightingBFSAddNode {
 
 pub struct ChunkManager {
     pub chunks: HashMap<u32, Arc<RwLock<Chunk>>>,
-    render_distance: u32,
-    seed: u32,
+    pub render_distance: u32,
+    pub seed: u32,
     noise_gen: Perlin,
     pub action_queue: ChunkActionQueue,
     update_queue: ChunkActionQueue,
@@ -54,8 +54,6 @@ pub fn mesh_slice_arrayed(chunk_x: i32, chunk_z: i32, y_slice: u32, chunks: &Has
     let y_end = (y_slice + 1) * 16;
     let mut vertices_transparent: Vec<SurfaceVertex> = Vec::with_capacity(16 * 16 * 16 * 6 * 4);
     let mut indices_transparent: Vec<u32> = Vec::with_capacity(16 * 16 * 16 * 6 * 6);
-
-    println!("Started slice");
 
     //below is no longer needed due to read_recursive
     //to prevent deadlocking(probably) :(
@@ -190,8 +188,6 @@ pub fn mesh_slice_arrayed(chunk_x: i32, chunk_z: i32, y_slice: u32, chunks: &Has
         }
     }
 
-    println!("Finished slice");
-
     let ilen = indices.len() as u32;
     let itlen = indices_transparent.len() as u32;
 
@@ -225,9 +221,8 @@ impl ChunkManager {
     pub fn on_frame_action(&mut self, device: &wgpu::Device, chunk_send: &Sender<(i32, i32, u32, HashMap<u32, Arc<RwLock<Chunk>>>)>) {
         const MAX_ACTIONS: u32 = 15;
         for _ in 0..MAX_ACTIONS {
-            println!("START");
             let res = self.action_queue.get_next_action();
-            if res.is_none() {println!("B"); break;}
+            if res.is_none() {break;}
 
             let u = res.unwrap();
             match u {
@@ -239,18 +234,15 @@ impl ChunkManager {
                 },
                 _ => {panic!("{:?} in wrong queue(action)", u)}
             }
-            println!("END");
         }
         
         let mut remaining_updates: u32 = 1; //lighting updates per frame.(meshing is sent to another chunk)
         
         while remaining_updates > 0 {
-            println!("I");
             let res = self.update_queue.get_next_action();
             if res.is_none() {break;}
 
             let u = res.unwrap();
-            println!("S");
             match u {
                 ChunkAction::UpdateChunkMesh(p) => {
                     if !self.unresolved_meshes.contains(&p) {
@@ -265,22 +257,19 @@ impl ChunkManager {
                 },
                 _ => {panic!("{:?} in wrong queue(update)", u)}
             }
-            println!("E");
+
         }
 
-        println!("DNE");
         //println!("FRAME: {}ms", t.elapsed_ms());
     }
 
-    pub fn generate_chunks(&mut self, device: &wgpu::Device) {
+    pub fn generate_chunks(&mut self, device: &wgpu::Device, send_queue: &Sender<(i32, i32)>) {
         let t = Stopwatch::start_new();
         for x in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
             for z in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
-                let chunk = Arc::new(RwLock::new(Chunk::new(device, Vector2::new(x, z), self.noise_gen, &mut self.extra_blocks)));
-                self.chunks.insert(xz_to_index(x, z), chunk);
+                send_queue.send((x, z)).unwrap();
             }
         }
-        println!("Took {} seconds to generate all", t.elapsed_ms() / 1000);
     }
  
     pub fn generate_chunk_illumination(&mut self) {
@@ -295,13 +284,15 @@ impl ChunkManager {
         println!("Took {} seconds to illuminate all", t.elapsed_ms() / 1000);
     }
 
-    pub fn mesh_chunks(&mut self, device: &wgpu::Device) {
+    pub fn mesh_chunks(&mut self, device: &wgpu::Device, sendmesh: &Sender<(i32, i32, u32, HashMap<u32, Arc<RwLock<Chunk>>>)>) {
         let t = Stopwatch::start_new();
         for x in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
             for z in -(self.render_distance as i32)..(self.render_distance + 1) as i32 {
                 let index = xz_to_index(x, z);
-
-                self.mesh_chunk(device, index);
+                for i in 0..16 {
+                    sendmesh.send((x, z, i, self.chunks.clone())).unwrap();
+                }
+                //self.mesh_chunk(device, index);
             }
         }
         println!("Took {} seconds to mesh all", t.elapsed_ms() / 1000);
@@ -779,28 +770,14 @@ impl ChunkManager {
 
         chunk.set_solid_buffer(slice, (vertex_buffer, index_buffer, ilen));
         chunk.set_transparent_buffer(slice, (vertex_buffer_t, index_buffer_t, ilen_t));
+        if chunk.slices_filled < 16 {
+            chunk.slices_filled += 1;
+        }
+        if chunk.slices_filled == 16 {
+            chunk.state = ChunkState::Ready;
+        }
 
     }
 
-    pub fn mesh_chunk(&mut self, device: &wgpu::Device, index: u32) {
-        let chunk = self.chunks.get(&index).unwrap().read();
-
-        let slices = (0..16).into_iter();
-        
-        let mut v0: Vec<(wgpu::Buffer, wgpu::Buffer, u32)> = Vec::new();
-        let mut v1: Vec<(wgpu::Buffer, wgpu::Buffer, u32)> = Vec::new();
-
-        slices.for_each(|s| {
-            let out = self.mesh_slice(device, &chunk, s);
-            v0.push(out.0);
-            v1.push(out.1);
-        });
-
-        drop(chunk);
-
-        let mut rechunk = self.chunks.get_mut(&index).unwrap().write();
-        
-        rechunk.set_solid_buffers(v0);
-        rechunk.set_transparent_buffers(v1);
-    }
+    
 }

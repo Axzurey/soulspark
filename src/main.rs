@@ -18,10 +18,11 @@ use pollster::FutureExt;
 use state::workspace::Workspace;
 use stopwatch::Stopwatch;
 use util::inputservice::{InputService, MouseLockState};
-use vox::chunk::{xz_to_index, Chunk, ChunkGridType};
+use vox::chunk::{xz_to_index, Chunk, ChunkGridType, ChunkState};
 use vox::chunk_manager::mesh_slice_arrayed;
 use vox::chunkactionqueue::ChunkAction;
 use vox::structure_loader::load_structures;
+use vox::worker_threads::{spawn_chunk_creation_loop, spawn_chunk_meshing_loop};
 use winit::event::{DeviceEvent, Event, KeyEvent, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::keyboard::{KeyCode, PhysicalKey};
@@ -52,8 +53,6 @@ async fn main() {
         }
     });
 
-    let a: Arc<Vec<u32>> = Arc::new(Vec::new());
-
     //find way to edit arc
 
     let event_loop = EventLoop::new().unwrap();
@@ -64,7 +63,7 @@ async fn main() {
     
     let mut gamewindow = GameWindow::new(window.clone()).block_on();
 
-    let mut workspace_arc = Arc::new(RwLock::new(Workspace::new(
+    let workspace_arc = Arc::new(RwLock::new(Workspace::new(
         &gamewindow.device, &gamewindow.camera_bindgroup_layout, 
         gamewindow.window_size.width, gamewindow.window_size.height,
         window.clone()
@@ -72,9 +71,9 @@ async fn main() {
 
     let mut workspace = workspace_arc.write();
 
-    workspace.chunk_manager.generate_chunks(&gamewindow.device);
-    workspace.chunk_manager.generate_chunk_illumination();
-    workspace.chunk_manager.mesh_chunks(&gamewindow.device);
+    let (sendmesh, getmesh) = spawn_chunk_meshing_loop(3);
+    let (sendchunk, getchunk) = spawn_chunk_creation_loop(4, workspace.chunk_manager.seed);
+    workspace.chunk_manager.generate_chunks(&gamewindow.device, &sendchunk);
 
     let text_label = TextLabel::new("h".to_owned(), "hellotext".to_owned());
 
@@ -83,7 +82,6 @@ async fn main() {
         let cloned_label = text_label.clone();
 
         workspace.input_service.on_mouse_click.connect(move |(btn, _)| {
-            println!("PRE");
             let lock = &mut wa.write();
 
             let p = lock.current_camera.position;
@@ -109,8 +107,6 @@ async fn main() {
                         ));
 
                         lock.chunk_manager.action_queue.place_block(target_block);
-
-                        println!("PLACED, {:?}", target_block_pos);
                     }
                 },
                 None => {
@@ -136,28 +132,6 @@ async fn main() {
     textbutton.write().unwrap().on_click.connect(|v| {
         println!("HELLO");
     });
-
-    let (chunksend, chunkget): (
-        Sender<(i32, i32, u32, HashMap<u32, Arc<RwLock<Chunk>>>)>,
-        Receiver<(i32, i32, u32, HashMap<u32, Arc<RwLock<Chunk>>>)>
-    ) = mpsc::channel();
-
-    let (meshedsend, meshedget): (
-        Sender<(i32, i32, u32, ((Vec<SurfaceVertex>, Vec<u32>, u32), (Vec<SurfaceVertex>, Vec<u32>, u32)))>,
-        Receiver<(i32, i32, u32, ((Vec<SurfaceVertex>, Vec<u32>, u32), (Vec<SurfaceVertex>, Vec<u32>, u32)))>
-    ) = mpsc::channel();
-    
-    {
-        let chunk_update_thread = std::thread::spawn(move || {
-            while let Ok((chunk_x, chunk_z, y_slice, chunks)) = chunkget.recv() {
-                let t = Stopwatch::start_new();
-                println!("STM");
-                let result = mesh_slice_arrayed(chunk_x, chunk_z, y_slice, &chunks);
-                println!("Meshed {}ms", t.elapsed_ms());
-                meshedsend.send((chunk_x, chunk_z, y_slice, result)).unwrap();
-            }
-        });
-    }
 
     {
         let wa = workspace_arc.clone();
@@ -238,26 +212,38 @@ async fn main() {
                                 let dt = now - last_update;
                                 last_update = now;
                                 gamewindow.on_next_frame(&mut workspace, dt.as_secs_f32());
-                                workspace.chunk_manager.on_frame_action(&gamewindow.device, &chunksend);
+                                workspace.chunk_manager.on_frame_action(&gamewindow.device, &sendmesh);
                                 workspace.input_service.update();
 
-                                println!("SI");
                                 for i in 0..15 {
-                                    if let Ok(res) = meshedget.try_recv() {
+                                    if let Ok(res) = getmesh.try_recv() {
                                         let at = Vector3::new(res.0, res.2 as i32, res.1);
                                         let index = workspace.chunk_manager.unresolved_meshes.iter().position(|p| *p == at);
                                         if let Some(i) = index {
                                             workspace.chunk_manager.unresolved_meshes.swap_remove(i);
                                         }
-                                        println!("O");
                                         workspace.chunk_manager.finalize_mesh(res.0, res.1, res.2, &gamewindow.device, res.3);
-                                        println!("O2");
                                     }
                                     else {
                                         break;
                                     }
                                 }
-                                println!("FI");
+                                loop {
+                                    if let Ok(res) = getchunk.try_recv() {
+                                        res.2.write().set_slice_vertex_buffers(&gamewindow.device);
+                                        workspace.chunk_manager.chunks.insert(xz_to_index(res.0, res.1), res.2);
+                                    
+                                        if workspace.chunk_manager.chunks.len() as u32 == (workspace.chunk_manager.render_distance * 2 + 1).pow(2) {
+                                            println!("Done chunks");
+                                            workspace.chunk_manager.generate_chunk_illumination();
+                                            workspace.chunk_manager.mesh_chunks(&gamewindow.device, &sendmesh);
+                                        }
+                                    }
+                                    else {
+                                        break;
+                                    }
+                                }
+
                             }
                         }
                         _ => {}
