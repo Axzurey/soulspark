@@ -33,8 +33,7 @@ pub fn spawn_chunk_creation_worker_thread(
     send_back: Sender<(usize, i32, i32, Arc<RwLock<Chunk>>)>
 ) -> Sender<(i32, i32)> {
     let (send, recv) = mpsc::channel();
-    let noisegen = Perlin::new(rand::rngs::StdRng::seed_from_u64(seed as u64).next_u32());
-
+    let noisegen = Perlin::new(seed);
     thread::spawn(move || {
         while let Ok((chunk_x, chunk_z)) = recv.recv() {
             let result = Arc::new(RwLock::new(Chunk::new(Vector2::new(chunk_x, chunk_z), noisegen, &mut HashMap::new())));

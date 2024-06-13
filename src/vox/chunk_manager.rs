@@ -209,7 +209,7 @@ impl ChunkManager {
         Self {
             chunks: HashMap::new(),
             render_distance: 10,
-            seed: 4294967294,
+            seed: 4222367654,
             noise_gen: Perlin::new(rand::rngs::StdRng::seed_from_u64(4294967294).next_u32()),
             action_queue: ChunkActionQueue::new(),
             update_queue: ChunkActionQueue::new(),
