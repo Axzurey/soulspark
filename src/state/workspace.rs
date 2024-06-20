@@ -14,7 +14,7 @@ pub struct Workspace {
 impl Workspace {
     pub fn new(device: &wgpu::Device, camera_bindgroup_layout: &wgpu::BindGroupLayout, width: u32, height: u32, window: Arc<Window>) -> Self {
         Self {
-            current_camera: Camera::new(Point3::new(0., 100., 0.), -90.0, -20.0, width as f32 / height as f32, 70., device, camera_bindgroup_layout),
+            current_camera: Camera::new(Point3::new(0., 140., 0.), -90.0, -20.0, width as f32 / height as f32, 70., device, camera_bindgroup_layout),
             chunk_manager: ChunkManager::new(),
             input_service: InputService::new(window)
         }

@@ -2,7 +2,7 @@ use std::{borrow::Borrow, collections::HashMap, mem, sync::{Arc, RwLock}};
 
 use cached::proc_macro::cached;
 use cgmath::{Vector2, Vector3};
-use noise::Perlin;
+use noise::{OpenSimplex, Perlin};
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use stopwatch::Stopwatch;
 use wgpu::util::DeviceExt;
@@ -67,7 +67,7 @@ pub struct Chunk {
 }
 
 impl Chunk {
-    pub fn new(position: Vector2<i32>, noisegen: Perlin, extra_blocks: &mut HashMap<u32, Vec<BlockType>>) -> Self {
+    pub fn new(position: Vector2<i32>, noisegen: OpenSimplex, extra_blocks: &mut HashMap<u32, Vec<BlockType>>) -> Self {
         let t = Stopwatch::start_new();
 
         let iter_layers = (0..16).into_iter();
@@ -96,13 +96,13 @@ impl Chunk {
                                 Vector3::new(abs_x, abs_y, abs_z))
                             )
                         }
-                        else if abs_y == floor_level && abs_y < 100 {
+                        else if abs_y == floor_level && abs_y < 160 {
                             Box::new(GrassBlock::new(
                                 Vector3::new(x, y as u32, z), 
                                 Vector3::new(abs_x, abs_y, abs_z))
                             )
                         }
-                        else if abs_y + 3 < floor_level || (abs_y == floor_level && abs_y >= 100) {
+                        else if abs_y + 3 < floor_level || (abs_y == floor_level && abs_y >= 160) {
                             Box::new(StoneBlock::new(
                                 Vector3::new(x, y as u32, z), 
                                 Vector3::new(abs_x, abs_y, abs_z))

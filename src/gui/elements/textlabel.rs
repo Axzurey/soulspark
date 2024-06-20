@@ -2,7 +2,7 @@ use crate::util::threadsignal::MonoThreadSignal;
 use std::sync::{Arc, RwLock, RwLockWriteGuard};
 use super::super::{guiobject::GuiObject, uistate::GuiPosition};
 use cgmath::Vector2;
-use eframe::egui::{Label, Id};
+use eframe::egui::{Color32, Id, Label, RichText};
 use pollster::FutureExt;
 
 pub struct TextLabel {
@@ -76,10 +76,10 @@ impl GuiObject for TextLabel {
         self.name = name;
     }
     fn render(&mut self, ctx: &eframe::egui::Context, ui: &mut eframe::egui::Ui) {
-        let labelraw = Label::new(&self.text);
+        let labelraw = Label::new(RichText::new(self.text.clone()).heading().color(Color32::from_rgb(255, 255, 255)));
         
         let label = ui.add_sized([200., 50.], labelraw);
-
+        
         if label.hovered() && !self.hovered {
             self.hovered = true;
             self.on_hover_enter.dispatch(()).block_on();

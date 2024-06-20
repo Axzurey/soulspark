@@ -23,6 +23,9 @@ impl Frame {
             interactable: true
         }))
     }
+    pub fn add_child(&mut self, child: Arc<RwLock<dyn GuiObject>>) {
+        self.children.push(child);
+    }
 }
 
 impl GuiObject for Frame {

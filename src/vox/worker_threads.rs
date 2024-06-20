@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::{atomic::AtomicI64, mpsc::{self, Receiver, Sender}, Arc}, thread};
 
 use cgmath::Vector2;
-use noise::Perlin;
+use noise::{OpenSimplex, Perlin};
 use parking_lot::{RawRwLock, RwLock};
 use rand::{RngCore, SeedableRng};
 
@@ -33,7 +33,7 @@ pub fn spawn_chunk_creation_worker_thread(
     send_back: Sender<(usize, i32, i32, Arc<RwLock<Chunk>>)>
 ) -> Sender<(i32, i32)> {
     let (send, recv) = mpsc::channel();
-    let noisegen = Perlin::new(seed);
+    let noisegen = OpenSimplex::new(seed);
     thread::spawn(move || {
         while let Ok((chunk_x, chunk_z)) = recv.recv() {
             let result = Arc::new(RwLock::new(Chunk::new(Vector2::new(chunk_x, chunk_z), noisegen, &mut HashMap::new())));

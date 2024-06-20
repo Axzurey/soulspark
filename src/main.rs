@@ -17,6 +17,7 @@ use internal::window::GameWindow;
 use pollster::FutureExt;
 use state::workspace::Workspace;
 use stopwatch::Stopwatch;
+use util::debugger::Debugger;
 use util::inputservice::{InputService, MouseLockState};
 use vox::chunk::{xz_to_index, Chunk, ChunkGridType, ChunkState};
 use vox::chunk_manager::mesh_slice_arrayed;
@@ -75,11 +76,8 @@ async fn main() {
     let (sendchunk, getchunk) = spawn_chunk_creation_loop(4, workspace.chunk_manager.seed);
     workspace.chunk_manager.generate_chunks(&gamewindow.device, &sendchunk, Vector2::new(0., 0.));
 
-    let text_label = TextLabel::new("h".to_owned(), "hellotext".to_owned());
-
     {
         let wa = workspace_arc.clone();
-        let cloned_label = text_label.clone();
 
         workspace.input_service.on_mouse_click.connect(move |(btn, _)| {
             let lock = &mut wa.write();
@@ -123,15 +121,12 @@ async fn main() {
         );
     }
 
-    let test_table = Table::new("test-table".to_string(), "hello!".to_string());
+    let debugger = {
+        let mut screenui = gamewindow.screenui.write().unwrap();
 
-    {gamewindow.screenui.write().unwrap().add_child(test_table);}
+        Debugger::new(workspace.chunk_manager.seed, &mut screenui)
+    };
 
-    let textbutton = TextButton::new("button!".to_owned(), "Hello Me!".to_owned());
-
-    textbutton.write().unwrap().on_click.connect(|v| {
-        println!("HELLO");
-    });
 
     {
         let wa = workspace_arc.clone();
@@ -156,12 +151,6 @@ async fn main() {
             }
         });
     }
-
-    let slider = Slider::new("SLIDERRR".to_owned());
-
-    {gamewindow.screenui.write().unwrap().add_child(text_label);}
-    //{gamewindow.screenui.write().unwrap().add_child(textbutton);}
-    //{gamewindow.screenui.write().unwrap().add_child(slider);}
 
     let mut last_update = instant::Instant::now();
 
@@ -214,6 +203,7 @@ async fn main() {
                                 gamewindow.on_next_frame(&mut workspace, dt.as_secs_f32());
                                 workspace.chunk_manager.on_frame_action(&gamewindow.device, &sendmesh);
                                 workspace.input_service.update();
+                                debugger.update(&workspace);
 
                                 for _ in 0..10 {
                                     if let Ok(res) = getmesh.try_recv() {
