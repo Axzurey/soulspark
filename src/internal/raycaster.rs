@@ -1,14 +1,15 @@
 use cgmath::Vector3;
+use owning_ref::OwningRef;
 
-use crate::{blocks::{airblock::AirBlock, block::{Block, BlockType, Blocks}}, vox::chunk_manager::{get_block_at_absolute, ChunkManager}};
+use crate::{blocks::{airblock::AirBlock, block::{Block, BlockType, Blocks}}, vox::{chunk::Chunk, chunk_manager::{get_block_at_absolute, ChunkManager}}};
 
-pub struct BlockRaycastResult {
-    pub hit: BlockType,
+pub struct BlockRaycastResult<'a> {
+    pub hit: &'a BlockType,
     pub normal: Vector3<i32>,
     pub position: Vector3<f32>
 }
 
-pub fn raycast_blocks<I>(from: Vector3<f32>, direction: Vector3<f32>, distance: f32, chunk_manager: &ChunkManager, ignore: I) -> Option<BlockRaycastResult>
+pub fn raycast_blocks<'a, I>(from: Vector3<f32>, direction: Vector3<f32>, distance: f32, chunk_manager: &'a ChunkManager, ignore: I) -> Option<BlockRaycastResult<'a>>
     where I: Fn(&BlockType) -> bool
 {
     //based on http://www.cse.yorku.ca/~amana/research/grid.pdf + https://github.com/fenomas/fast-voxel-raycast/blob/master/index.js
@@ -64,7 +65,7 @@ pub fn raycast_blocks<I>(from: Vector3<f32>, direction: Vector3<f32>, distance: 
                     if !ignore(&b) {
                         //println!("{:?}, \n{:?}", from + direction * traversed, Vector3::new(x, y, z));
                         return Some(BlockRaycastResult {
-                            hit: b.as_ref().clone(),
+                            hit: b,
                             position: from + direction * traversed,
                             normal: Vector3::new(
                                 if stepped_index == 0 {-step_x} else {0},

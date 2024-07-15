@@ -7,13 +7,23 @@ use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use stopwatch::Stopwatch;
 use wgpu::util::DeviceExt;
 
-use crate::{blocks::{airblock::AirBlock, block::{Block, BlockType, Blocks}, dirtblock::DirtBlock, grassblock::GrassBlock, stoneblock::StoneBlock}, engine::vertex::{ModelVertex, Vertex}, vox::{structure_loader::get_blocks_for_structure_at_point, worldgen::{density_map_plane, is_cave}}};
+use crate::{blocks::{airblock::AirBlock, block::{Block, BlockType, Blocks}, dirtblock::DirtBlock, grassblock::GrassBlock, stoneblock::StoneBlock}, engine::vertex::{ModelVertex, Vertex}, internal::depthsort::Quad, vox::{structure_loader::get_blocks_for_structure_at_point, worldgen::{density_map_plane, is_cave}}};
 
 use super::worldgen::generate_surface_height;
 
 #[cached]
 pub fn local_xyz_to_index(x: u32, y: u32, z: u32) -> u32 {
-    ((z * 16 * 16) + (y * 16) + x) as u32
+    (z * 16 * 16) + (y * 16) + x
+}
+
+#[cached]
+pub fn local_xz_to_index_dynamic(x: i32, z: i32, width: i32) -> usize {
+    (width * x + z) as usize
+}
+
+#[cached]
+pub fn local_xz_to_index(x: u32, z: u32) -> u32 {
+    z * 16 + x
 }
 
 #[cached]
@@ -27,7 +37,7 @@ pub fn xz_to_index(x: i32, z: i32) -> u32 {
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ChunkDataVertex {
-    pub position_sliced: [i32; 3]
+    pub position_sliced: [i32; 3],
 }
 
 impl Vertex for ChunkDataVertex {
@@ -40,7 +50,7 @@ impl Vertex for ChunkDataVertex {
                     offset: 0,
                     shader_location: 3,
                     format: wgpu::VertexFormat::Sint32x3,
-                },
+                }
             ],
         }
     }
@@ -53,17 +63,69 @@ pub enum ChunkState {
     RequiresMeshing
 }
 
-pub type ChunkGridType = Vec<Vec<BlockType>>;
+pub struct ChunkBuffers {
+    pub position: Vector2<i32>,
+    //(vertex, index, len_indices)
+    pub solid_buffers: Vec<Option<(wgpu::Buffer, wgpu::Buffer, u32)>>,
+    pub transparent_buffers: Vec<Option<(wgpu::Buffer, wgpu::Buffer, u32)>>,
+    pub slice_vertex_buffers: Vec<wgpu::Buffer>,
+}
 
+impl ChunkBuffers {
+    pub fn new(x: i32, z: i32) -> Self {
+        Self {
+            position: Vector2::new(x, z),
+            solid_buffers: Vec::from_iter(std::iter::repeat_with(|| None).take(16)),
+            transparent_buffers: Vec::from_iter(std::iter::repeat_with(|| None).take(16)),
+            slice_vertex_buffers: Vec::new()
+        }
+    }
+    pub fn set_slice_vertex_buffers(&mut self, device: &wgpu::Device) {
+        let slice_vertex_buffers = (0..16).map(|y| {
+            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&format!("Chunk Data Buffer")),
+                contents: bytemuck::cast_slice(&[ChunkDataVertex {
+                    position_sliced: [self.position.x, y, self.position.y]
+                }]),
+                usage: wgpu::BufferUsages::VERTEX,
+            })
+        }).collect::<Vec<wgpu::Buffer>>();
+        self.slice_vertex_buffers = slice_vertex_buffers;
+    }
+    pub fn set_solid_buffer(&mut self, slice: u32, buffers: (wgpu::Buffer, wgpu::Buffer, u32)) {
+        self.solid_buffers[slice as usize] = Some(buffers);
+    }
+    pub fn set_solid_buffers(&mut self, buffers: Vec<Option<(wgpu::Buffer, wgpu::Buffer, u32)>>) {
+        self.solid_buffers = buffers;
+    }
+    pub fn get_solid_buffer(&self, slice: u32) -> Option<&(wgpu::Buffer, wgpu::Buffer, u32)> {
+        self.solid_buffers[slice as usize].as_ref()
+    }
+    pub fn get_solid_buffers(&self) -> &Vec<Option<(wgpu::Buffer, wgpu::Buffer, u32)>> {
+        &self.solid_buffers
+    }
+    pub fn set_transparent_buffer(&mut self, slice: u32, buffers: (wgpu::Buffer, wgpu::Buffer, u32)) {
+        self.transparent_buffers[slice as usize] = Some(buffers);
+    }
+    pub fn set_transparent_buffers(&mut self, buffers: Vec<Option< (wgpu::Buffer, wgpu::Buffer, u32)>>) {
+        self.transparent_buffers = buffers;
+    }
+    pub fn get_transparent_buffer(&self, slice: u32) -> Option<&(wgpu::Buffer, wgpu::Buffer, u32)> {
+        self.transparent_buffers[slice as usize].as_ref()
+    }
+    pub fn get_transparent_buffers(&self) -> &Vec<Option<(wgpu::Buffer, wgpu::Buffer, u32)>> {
+        &self.transparent_buffers
+    }
+}
+
+pub type ChunkGridType = Vec<Vec<BlockType>>;
+#[derive(Clone)]
 pub struct Chunk {
     pub position: Vector2<i32>,
     pub grid: ChunkGridType,
     
-    //(vertex, index, len_indices)
-    solid_buffers: Vec<Option<(wgpu::Buffer, wgpu::Buffer, u32)>>,
-    transparent_buffers: Vec<Option<(wgpu::Buffer, wgpu::Buffer, u32)>>,
-    pub slice_vertex_buffers: Vec<wgpu::Buffer>,
     pub states: Vec<ChunkState>,
+    pub transparent_quads: Vec<Vec<Quad>>
 }
 
 impl Chunk {
@@ -205,35 +267,14 @@ impl Chunk {
             }
         }
 
-        
-
         println!("Took {}ms to generate chunk", t.elapsed_ms());
-
-        let solid_buffers = Vec::from_iter(std::iter::repeat_with(|| None).take(16));
-
-        let transparent_buffers = Vec::from_iter(std::iter::repeat_with(|| None).take(16));
 
         Self {
             position,
             grid: blocks,
-            solid_buffers,
-            transparent_buffers,
-            slice_vertex_buffers: Vec::new(),
             states: Vec::from_iter(std::iter::repeat(ChunkState::RequiresLighting).take(16)),
+            transparent_quads: Vec::from_iter(std::iter::repeat_with(|| {Vec::new()}).take(16))
         }
-    }
-
-    pub fn set_slice_vertex_buffers(&mut self, device: &wgpu::Device) {
-        let slice_vertex_buffers = (0..16).map(|y| {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(&format!("Chunk Data Buffer")),
-                contents: bytemuck::cast_slice(&[ChunkDataVertex {
-                    position_sliced: [self.position.x, y, self.position.y]
-                }]),
-                usage: wgpu::BufferUsages::VERTEX,
-            })
-        }).collect::<Vec<wgpu::Buffer>>();
-        self.slice_vertex_buffers = slice_vertex_buffers;
     }
 
     pub fn get_block_at(&self, x: u32, y: u32, z: u32) -> &BlockType {
@@ -251,31 +292,6 @@ impl Chunk {
             }
         }
         0
-    }
-
-    pub fn set_solid_buffer(&mut self, slice: u32, buffers: (wgpu::Buffer, wgpu::Buffer, u32)) {
-        self.solid_buffers[slice as usize] = Some(buffers);
-    }
-    pub fn set_solid_buffers(&mut self, buffers: Vec<Option<(wgpu::Buffer, wgpu::Buffer, u32)>>) {
-        self.solid_buffers = buffers;
-    }
-    pub fn get_solid_buffer(&self, slice: u32) -> Option<&(wgpu::Buffer, wgpu::Buffer, u32)> {
-        self.solid_buffers[slice as usize].as_ref()
-    }
-    pub fn get_solid_buffers(&self) -> &Vec<Option<(wgpu::Buffer, wgpu::Buffer, u32)>> {
-        &self.solid_buffers
-    }
-    pub fn set_transparent_buffer(&mut self, slice: u32, buffers: (wgpu::Buffer, wgpu::Buffer, u32)) {
-        self.transparent_buffers[slice as usize] = Some(buffers);
-    }
-    pub fn set_transparent_buffers(&mut self, buffers: Vec<Option< (wgpu::Buffer, wgpu::Buffer, u32)>>) {
-        self.transparent_buffers = buffers;
-    }
-    pub fn get_transparent_buffer(&self, slice: u32) -> Option<&(wgpu::Buffer, wgpu::Buffer, u32)> {
-        self.transparent_buffers[slice as usize].as_ref()
-    }
-    pub fn get_transparent_buffers(&self) -> &Vec<Option<(wgpu::Buffer, wgpu::Buffer, u32)>> {
-        &self.transparent_buffers
     }
 
     pub fn modify_block_at<F>(&mut self, x: u32, y: u32, z: u32, mut callback: F) where F: FnMut(&mut BlockType) {

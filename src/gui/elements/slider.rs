@@ -1,12 +1,10 @@
-use std::sync::{Arc, RwLock, RwLockWriteGuard};
-
 use cgmath::Vector2;
 use eframe::egui::Id;
 
 use crate::{gui::{guiobject::GuiObject, uistate::{GuiPosition, MouseButton}}, util::threadsignal::MonoThreadSignal};
 
 pub struct Slider {
-    children: Vec<Arc<RwLock<dyn GuiObject>>>,
+    children: Vec<Box<dyn GuiObject>>,
     name: String,
     id: Id,
     position: GuiPosition,
@@ -20,8 +18,8 @@ pub struct Slider {
 }
 
 impl Slider {
-    pub fn new(name: String) -> Arc<RwLock<Self>> {
-        Arc::new(RwLock::new(Self {
+    pub fn new(name: String) -> Box<Self> {
+        Box::new(Self {
             children: Vec::new(),
             name: name.clone(),
             id: Id::new(name),
@@ -33,12 +31,12 @@ impl Slider {
             max: 10.0,
             min: 0.0,
             value: 2.5
-        }))
+        })
     }
 }
 
 impl GuiObject for Slider {
-    fn get_children(&self) -> &Vec<Arc<RwLock<dyn GuiObject>>> {
+    fn get_children(&self) -> &Vec<Box<dyn GuiObject>> {
         &self.children
     }
     fn get_name(&self) -> &str {
@@ -53,24 +51,8 @@ impl GuiObject for Slider {
         
         let slider = ui.add_sized([200., 50.], sliderraw);
     }
-}
-
-impl GuiObject for RwLockWriteGuard<'_, Slider> {
-    fn get_children(&self) -> &Vec<Arc<RwLock<dyn GuiObject>>> {
-        &self.children
-    }
-    fn get_name(&self) -> &str {
-        &self.name
-    }
-    fn set_name(&mut self, name: String) {
-        self.name = name;
-    }
-    fn render(&mut self, ctx: &eframe::egui::Context, ui: &mut eframe::egui::Ui) {
-        let r = self.min..=self.max;
-        let sliderraw = eframe::egui::Slider::new(&mut self.value, r);
-        
-        let slider = ui.add_sized([200., 50.], sliderraw);
-        
-        
+    
+    fn get_children_mut(&mut self) -> &mut Vec<Box<dyn GuiObject>> {
+        &mut self.children
     }
 }

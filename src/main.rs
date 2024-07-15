@@ -8,7 +8,6 @@ use cgmath::{Point3, Vector2, Vector3};
 use engine::surfacevertex::SurfaceVertex;
 use gen::primitive::PrimitiveBuilder;
 use gui::elements::slider::Slider;
-use gui::elements::table::Table;
 use gui::elements::textbutton::TextButton;
 use gui::elements::textlabel::TextLabel;
 use gui::uistate::MouseButton;
@@ -53,7 +52,6 @@ async fn main() {
             }
         }
     });
-
     //find way to edit arc
 
     let event_loop = EventLoop::new().unwrap();
@@ -87,29 +85,28 @@ async fn main() {
             let pos = Vector3::new(p.x, p.y, p.z);
             
             let res = raycast_blocks(pos, lock.current_camera.look_vector(), 400.0, &lock.chunk_manager, |_| false);
-        
-            match res {
-                Some(hit) => {
-                    let abs = hit.hit.get_absolute_position();
+            
+            if res.is_none() {return};
 
-                    if btn == MouseButton::Left {
-                        lock.chunk_manager.action_queue.break_block(abs);
-                    }
-                    else if btn == MouseButton::Right {
-                        let normal = hit.normal;
-                        let target_block_pos = abs + normal;
+            let r = res.unwrap();
 
-                        let target_block = Box::new(StoneBlock::new(
-                            Vector3::new(target_block_pos.x.rem_euclid(16) as u32, target_block_pos.y.rem_euclid(16) as u32, target_block_pos.z.rem_euclid(16) as u32),
-                            target_block_pos
-                        ));
+            let abs = r.hit.get_absolute_position();
+            let normal = r.normal;
 
-                        lock.chunk_manager.action_queue.place_block(target_block);
-                    }
-                },
-                None => {
-                    
-                }
+            drop(r);
+
+            if btn == MouseButton::Left {
+                lock.chunk_manager.action_queue.break_block(abs);
+            }
+            else if btn == MouseButton::Right {
+                let target_block_pos = abs + normal;
+
+                let target_block = Box::new(StoneBlock::new(
+                    Vector3::new(target_block_pos.x.rem_euclid(16) as u32, target_block_pos.y.rem_euclid(16) as u32, target_block_pos.z.rem_euclid(16) as u32),
+                    target_block_pos
+                ));
+
+                lock.chunk_manager.action_queue.place_block(target_block);
             }
         });
     }
@@ -121,11 +118,7 @@ async fn main() {
         );
     }
 
-    let debugger = {
-        let mut screenui = gamewindow.screenui.write().unwrap();
-
-        Debugger::new(workspace.chunk_manager.seed, &mut screenui)
-    };
+    let mut debugger = Debugger::new(workspace.chunk_manager.seed, &mut gamewindow.screenui);
 
 
     {
@@ -196,15 +189,16 @@ async fn main() {
                         },
                         WindowEvent::RedrawRequested => {
                             if window_id == window.id() {
-                                
+                                let framestart = Stopwatch::start_new();
                                 let now = instant::Instant::now();
                                 let dt = now - last_update;
                                 last_update = now;
                                 gamewindow.on_next_frame(&mut workspace, dt.as_secs_f32());
+                                
                                 workspace.chunk_manager.on_frame_action(&gamewindow.device, &sendmesh);
                                 workspace.input_service.update();
-                                debugger.update(&workspace);
-
+                                debugger.update(&workspace, &mut gamewindow.screenui);
+                                
                                 for _ in 0..10 {
                                     if let Ok(res) = getmesh.try_recv() {
                                         let at = Vector3::new(res.0, res.2 as i32, res.1);
@@ -220,12 +214,15 @@ async fn main() {
                                 }
                                 loop {
                                     if let Ok(res) = getchunk.try_recv() {
-                                        res.2.write().set_slice_vertex_buffers(&gamewindow.device);
+                                        let chunkbuff = workspace.chunk_manager.chunk_buffers.get_mut(&xz_to_index(res.0, res.1)).unwrap();
+
+                                        chunkbuff.set_slice_vertex_buffers(&gamewindow.device);
+
                                         workspace.chunk_manager.chunks.insert(xz_to_index(res.0, res.1), res.2);
-                                    
+
                                         if workspace.chunk_manager.chunks.len() as u32 == (workspace.chunk_manager.render_distance * 2 + 1).pow(2) {
                                             println!("Beginning Illumination");
-                                            workspace.chunk_manager.generate_chunk_illumination();
+                                            workspace.chunk_manager.generate_chunk_illumination(&gamewindow.device);
                                             workspace.chunk_manager.mesh_chunks(&gamewindow.device, &sendmesh, Vector3::new(0., 0., 0.));
                                         }
                                     }
@@ -233,7 +230,7 @@ async fn main() {
                                         break;
                                     }
                                 }
-
+                                //println!("Frame time: {}ms", framestart.elapsed_ms());
                             }
                         }
                         _ => {}

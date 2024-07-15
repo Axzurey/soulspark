@@ -1,13 +1,13 @@
-use std::{mem::{self, size_of}, sync::{Arc, RwLock, RwLockReadGuard}};
+use std::{mem::{self, size_of}, num::NonZeroU32, sync::{Arc, RwLock, RwLockReadGuard}};
 
-use cgmath::{Matrix3, Matrix4, Point3, SquareMatrix};
+use cgmath::{Matrix3, Matrix4, MetricSpace, Point3, SquareMatrix, Vector3};
 use rayon::iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use stopwatch::Stopwatch;
 use wgpu::{util::DeviceExt, BindGroupLayout, RenderPipeline, TextureFormat};
 
-use crate::{engine::{surfacevertex::SurfaceVertex, texture::Texture, texture_loader::{initialize_load_textures, preload_textures}, vertex::{ModelVertex, Vertex}}, gen::{object::RawObject, spotlight::{RawSpotLight, Spotlight}}, state::workspace::Workspace, vox::chunk::{Chunk, ChunkDataVertex, ChunkState}};
+use crate::{engine::{surfacevertex::SurfaceVertex, texture::Texture, texture_loader::{initialize_load_textures, preload_textures}, vertex::{ModelVertex, Vertex}}, gen::{object::RawObject, spotlight::{RawSpotLight, Spotlight}}, state::workspace::Workspace, vox::chunk::{local_xz_to_index_dynamic, xz_to_index, Chunk, ChunkDataVertex, ChunkState}};
 
-use super::{renderpipeline::create_render_pipeline, renderstorage::RenderStorage};
+use super::{camera::Camera, depthsort::sort_chunk_transparent_quads, renderpipeline::create_render_pipeline, renderstorage::RenderStorage};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -17,6 +17,7 @@ struct RendererGlobals {
 
 pub struct MainRenderer {
     surface_pipeline: RenderPipeline,
+    surface_pipeline_wireframe: RenderPipeline,
     transparent_surface_pipeline: RenderPipeline,
     object_pipeline: RenderPipeline,
     material_bind_group_layout: BindGroupLayout,
@@ -34,7 +35,8 @@ pub struct MainRenderer {
     global_bindgroup_layout: wgpu::BindGroupLayout,
     shadow_prebindgroup_layout: wgpu::BindGroupLayout,
     width: u32,
-    height: u32
+    height: u32,
+    wireframe_mode: bool
 }
 
 impl MainRenderer {
@@ -171,7 +173,25 @@ impl MainRenderer {
             None,
             false,
             false,
+            false,
             false
+        );
+
+        let surface_pipeline_wireframe = create_render_pipeline(
+            "surface_pipeline wireframe",
+            device,
+            &surface_pipeline_layout,
+            surface_texture_format,
+            Some(TextureFormat::Depth32Float),
+            &[SurfaceVertex::desc(), ChunkDataVertex::desc()],
+            "res/shaders/surfaceshader.wgsl",
+            true,
+            true,
+            None,
+            false,
+            false,
+            false,
+            true
         );
 
         let transparent_surface_pipeline = create_render_pipeline(
@@ -185,6 +205,7 @@ impl MainRenderer {
             true,
             false,
             None,
+            false,
             false,
             false,
             false
@@ -215,6 +236,7 @@ impl MainRenderer {
             None,
             false,
             false,
+            false,
             false
         );
 
@@ -235,7 +257,8 @@ impl MainRenderer {
             }),
             true,
             true,
-            true
+            true,
+            false
         );
 
         let depth_texture = Texture::from_empty("depth texture", &device, wgpu::TextureFormat::Depth32Float, screendims.0, screendims.1, wgpu::FilterMode::Linear);
@@ -266,6 +289,8 @@ impl MainRenderer {
             shadow_prebindgroup_layout,
             width: screendims.0,
             height: screendims.1,
+            wireframe_mode: false,
+            surface_pipeline_wireframe
         }
     }
 
@@ -526,12 +551,12 @@ impl MainRenderer {
         output_texture: &mut wgpu::SurfaceTexture, 
         output_view: &wgpu::TextureView, 
         encoder: &mut wgpu::CommandEncoder,
-        camera_bindgroup: &wgpu::BindGroup,
-        workspace: &Workspace
+        workspace: &mut Workspace
     ) {
+        if (workspace.chunk_manager.chunks.len() as u32) < (workspace.chunk_manager.render_distance * 2 + 1).pow(2) {return}
         let t = Stopwatch::start_new();
-        let mut locks = Vec::new();
-        
+        let camera_bindgroup = &workspace.current_camera.bindgroup;
+
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("object render pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment { 
@@ -562,25 +587,20 @@ impl MainRenderer {
             timestamp_writes: None,
             occlusion_query_set: None,
         });
-        render_pass.set_pipeline(&self.surface_pipeline);
+        render_pass.set_pipeline(if self.wireframe_mode {&self.surface_pipeline_wireframe} else {&self.surface_pipeline});
         render_pass.set_bind_group(0, &self.texture_bindgroup, &[]);
         render_pass.set_bind_group(1, camera_bindgroup, &[]);
 
-        for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
-            let read = chunk.read();
-            locks.push(read);
-        }
 
         let mut outeri = 0;
-        for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
-            let read = &locks[outeri];
-            
-            let out = read.get_solid_buffers();
+        for (index, chunk) in workspace.chunk_manager.chunk_buffers.iter() {
+            let chunkref = workspace.chunk_manager.chunks.get(index).unwrap();
+            let out = chunk.get_solid_buffers();
 
             let mut i = 0;
 
             for t in out {
-                if read.states[i] != ChunkState::Ready {i += 1; continue};
+                if chunkref.states[i] != ChunkState::Ready {i += 1; continue};
                 let (vertex_buffer, index_buffer, ilen) = t.as_ref().unwrap();
                 if *ilen == 0 {
                     i += 1;
@@ -589,7 +609,7 @@ impl MainRenderer {
                 
                 render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
                 render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                render_pass.set_vertex_buffer(1, read.slice_vertex_buffers[i].slice(..));
+                render_pass.set_vertex_buffer(1, chunk.slice_vertex_buffers[i].slice(..));
                 render_pass.draw_indexed(0..*ilen, 0, 0..1);
 
                 i += 1;
@@ -597,8 +617,6 @@ impl MainRenderer {
             outeri += 1;
         }
         drop(render_pass);
-
-        let mut locks = Vec::new();
 
         let mut transparency_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("transparent render pass"),
@@ -625,37 +643,72 @@ impl MainRenderer {
         transparency_render_pass.set_bind_group(0, &self.texture_bindgroup, &[]);
         transparency_render_pass.set_bind_group(1, camera_bindgroup, &[]);
 
-        for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
-            let read = chunk.read();
-            locks.push(read);
-        }
+        let mut chunks_sorted = workspace.chunk_manager.chunks.clone().iter().flat_map(|v| (0..16).map(|slice| {
+            let pos = v.1.position;
+            Vector3::new(pos.x as f32, slice as f32, pos.y as f32)
+        })).collect::<Vec<_>>();
+
+        let camera_pos = Vector3::new(
+            workspace.current_camera.position.x,
+            workspace.current_camera.position.y,
+            workspace.current_camera.position.z
+        );
+
+        chunks_sorted.sort_by(|a, b| {
+            let dista = a.distance(camera_pos);
+            let distb = b.distance(camera_pos);
+    
+            dista.partial_cmp(&distb).unwrap()
+        });
+
+        // for chunkp in chunks_sorted {
+        //     let chunk = workspace.chunk_manager.chunks.get_mut(&xz_to_index(chunkp.x as i32, chunkp.z as i32)).unwrap();
+        //     let chunkbuff = workspace.chunk_manager.chunk_buffers.get(&xz_to_index(chunkp.x as i32, chunkp.z as i32)).unwrap();
+
+        //     let buffs = sort_chunk_transparent_quads(device, &workspace.current_camera, chunk, chunkp.y as usize);
+
+        //     match buffs {
+        //         None => {},
+        //         Some(transparent_tris) => {
+        //             transparency_render_pass.set_index_buffer(transparent_tris.1.slice(..), wgpu::IndexFormat::Uint32);
+        //             transparency_render_pass.set_vertex_buffer(0, transparent_tris.0.slice(..));
+        //             transparency_render_pass.set_vertex_buffer(1, chunkbuff.slice_vertex_buffers[chunkp.y as usize].slice(..));
+        //             transparency_render_pass.draw_indexed(0..transparent_tris.2 as u32, 0, 0..1);
+        //         }
+        //     }
+        // }
+
+        // for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
+        //     let read = chunk.read();
+        //     locks.push(read);
+        // }
         
-        let mut outeri = 0;
-        for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
-            let read = &locks[outeri];
+        // let mut outeri = 0;
+        // for (_index, chunk) in workspace.chunk_manager.chunks.iter() {
+        //     let read = &locks[outeri];
 
-            let out = read.get_transparent_buffers();
+        //     let out = read.get_transparent_buffers();
 
-            let mut i = 0;
+        //     let mut i = 0;
 
-            for t in out {
-                if read.states[i] != ChunkState::Ready {i += 1; continue};
-                let (vertex_buffer, index_buffer, ilen) = t.as_ref().unwrap();
-                if *ilen == 0 {
-                    i += 1;
-                    continue;
-                };
+        //     for t in out {
+        //         if read.states[i] != ChunkState::Ready {i += 1; continue};
+        //         let (vertex_buffer, index_buffer, ilen) = t.as_ref().unwrap();
+        //         if *ilen == 0 {
+        //             i += 1;
+        //             continue;
+        //         };
                 
-                transparency_render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                transparency_render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                transparency_render_pass.set_vertex_buffer(1, read.slice_vertex_buffers[i].slice(..));
-                transparency_render_pass.draw_indexed(0..*ilen, 0, 0..1);
+        //         transparency_render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+        //         transparency_render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        //         transparency_render_pass.set_vertex_buffer(1, read.slice_vertex_buffers[i].slice(..));
+        //         transparency_render_pass.draw_indexed(0..*ilen, 0, 0..1);
 
-                i += 1;
-            }
-            outeri += 1;
-        }
+        //         i += 1;
+        //     }
+        //     outeri += 1;
+        // }
         drop(transparency_render_pass);
-        //println!("frame: {}ms", t.elapsed_ms());
+        //println!("frame render: {}ms", t.elapsed_ms());
     }
 }

@@ -13,7 +13,8 @@ pub fn create_render_pipeline(
     bias: Option<wgpu::DepthBiasState>,
     nocolor: bool,
     nofrag: bool,
-    bake: bool
+    bake: bool,
+    iswireframe: bool
 ) -> wgpu::RenderPipeline {
     let shader_descriptor = wgpu::ShaderModuleDescriptor {
         label: Some(shader_path),
@@ -49,7 +50,7 @@ pub fn create_render_pipeline(
             targets: if nocolor {&[]} else {&color_targetstate},
         })},
         primitive: wgpu::PrimitiveState {
-            topology: wgpu::PrimitiveTopology::TriangleList,
+            topology: if iswireframe {wgpu::PrimitiveTopology::LineList} else {wgpu::PrimitiveTopology::TriangleList},
             strip_index_format: None,
             front_face: wgpu::FrontFace::Ccw,
             cull_mode: if backface_culling {Some(wgpu::Face::Back)} else {None},

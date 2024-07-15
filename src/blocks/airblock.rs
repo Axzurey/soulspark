@@ -2,6 +2,7 @@ use cgmath::Vector3;
 
 use super::block::{Block, Blocks};
 
+#[derive(Clone)]
 pub struct AirBlock {
     relative_position: Vector3<u32>,
     absolute_position: Vector3<i32>,

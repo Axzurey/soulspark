@@ -1,6 +1,6 @@
 use std::f32::consts::FRAC_PI_2;
 
-use cgmath::{perspective, InnerSpace, Matrix4, Point3, Rad, SquareMatrix, Vector2, Vector3};
+use cgmath::{perspective, InnerSpace, Matrix4, Point3, Rad, SquareMatrix, Transform, Vector2, Vector3};
 use instant::Duration;
 use wgpu::util::DeviceExt;
 use winit::{event::ElementState, keyboard::KeyCode};
@@ -28,12 +28,13 @@ pub struct Camera {
     view_matrix: Matrix4<f32>,
 
     view_proj_matrix: Matrix4<f32>,
-
+    inv_view_proj_matrix: Matrix4<f32>,
     yaw: Rad<f32>,
     pitch: Rad<f32>,
     
     pub fov: Rad<f32>,
     pub aspect_ratio: f32,
+    pub screendims: (u32, u32),
     znear: f32,
     zfar: f32,
 
@@ -47,13 +48,17 @@ pub struct Camera {
 pub struct CameraUniform {
     view_position: [f32; 4],
     view_proj: [[f32; 4]; 4],
+    inv_view_proj: [[f32; 4]; 4],
+    screendims: [u32; 4]
 }
 
 impl Into<CameraUniform> for Camera {
     fn into(self) -> CameraUniform {
         CameraUniform {
             view_position: [self.position.x, self.position.y, self.position.z, 1.0],
-            view_proj: self.view_proj_matrix.into()
+            view_proj: self.view_proj_matrix.into(),
+            inv_view_proj: self.inv_view_proj_matrix.into(),
+            screendims: [0, 0, 0, 0]
         }
     }
 }
@@ -66,13 +71,16 @@ impl Camera {
         aspect_ratio: f32,
         fov: f32,
         device: &wgpu::Device,
-        bindgroup_layout: &wgpu::BindGroupLayout
+        bindgroup_layout: &wgpu::BindGroupLayout,
+        dims: (u32, u32)
     ) -> Self {
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Buffer"),
             contents: bytemuck::cast_slice(&[CameraUniform {
                 view_position: [0., 0., 0., 1.],
-                view_proj: Matrix4::from_nonuniform_scale(0., 0., 0.).into()
+                view_proj: Matrix4::from_nonuniform_scale(0., 0., 0.).into(),
+                inv_view_proj: Matrix4::from_nonuniform_scale(0., 0., 0.).into(),
+                screendims: [dims.0, dims.1, 0, 0]
             }]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST
         });
@@ -102,10 +110,12 @@ impl Camera {
             projection_matrix: Matrix4::identity(),
             view_matrix: Matrix4::identity(),
             view_proj_matrix: Matrix4::identity(),
+            inv_view_proj_matrix: Matrix4::identity(),
             controller: CameraController::new(),
 
             buffer,
-            bindgroup
+            bindgroup,
+            screendims: dims
         }
     }
 
@@ -130,13 +140,17 @@ impl Camera {
             Vector3::unit_y()
         );
 
-        self.projection_matrix = perspective(self.fov, self.aspect_ratio, self.znear, self.zfar);
+        self.projection_matrix = OPENGL_TO_WGPU_MATRIX * perspective(self.fov, self.aspect_ratio, self.znear, self.zfar);
     
         self.view_proj_matrix = self.projection_matrix * self.view_matrix;
 
+        self.inv_view_proj_matrix = self.view_proj_matrix.inverse_transform().unwrap();
+
         queue.write_buffer(&self.buffer, 0, bytemuck::cast_slice(&[CameraUniform {
             view_position: self.position.to_homogeneous().into(),
-            view_proj: self.view_proj_matrix.into()
+            view_proj: self.view_proj_matrix.into(),
+            inv_view_proj: self.inv_view_proj_matrix.into(),
+            screendims: [self.screendims.0, self.screendims.1, 0, 0]
         }]));
     }
 

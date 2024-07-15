@@ -24,12 +24,12 @@ pub fn create_block_default(block: Blocks, absolute_position: Vector3<i32>) -> B
 #[derive(PartialEq, Eq, Debug, Deserialize, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum Blocks {
-    AIR,
-    DIRT,
-    GRASS,
-    STONE,
-    LOG,
-    LEAF
+    AIR = 0,
+    DIRT = 1,
+    GRASS = 2,
+    STONE = 3,
+    LOG = 4,
+    LEAF = 5
 }
 
 #[derive(PartialEq, Eq, Clone, Copy)]
@@ -54,14 +54,25 @@ impl BlockFace {
         }
     }
 
-    pub fn world_to_sample(&self, axis: i32, x: i32, y: i32) -> IVec3 {
+    pub fn normal(&self) -> Vector3<i32> {
         match self {
-            BlockFace::Top => ivec3(x, axis + 1, y),
-            BlockFace::Bottom => ivec3(x, axis, y),
-            BlockFace::Left => ivec3(axis, y, x),
-            BlockFace::Right => ivec3(axis + 1, y, x),
-            BlockFace::Front => ivec3(x, y, axis),
-            BlockFace::Back => ivec3(x, y, axis + 1),
+            BlockFace::Left => Vector3::new(-1, 0, 0),
+            BlockFace::Right => Vector3::new(1, 0, 0),
+            BlockFace::Bottom => Vector3::new(0, -1, 0),
+            BlockFace::Top => Vector3::new(0, 1, 0),
+            BlockFace::Front => Vector3::new(0, 0, -1),
+            BlockFace::Back => Vector3::new(0, 0, 1),
+        }
+    }
+
+    pub fn world_to_sample(&self, axis: i32, x: i32, y: i32) -> [u32; 3] {
+        match self {
+            BlockFace::Top => [x as u32, axis as u32 + 1, y as u32],
+            BlockFace::Bottom => [x as u32, axis as u32, y as u32],
+            BlockFace::Left => [axis as u32, y as u32, x as u32],
+            BlockFace::Right => [axis as u32 + 1, y as u32, x as u32],
+            BlockFace::Front => [x as u32, y as u32, axis as u32],
+            BlockFace::Back => [x as u32, y as u32, axis as u32 + 1],
         }
     }
 
@@ -108,7 +119,7 @@ pub fn calculate_illumination_bytes(block: &BlockType) -> u32 {
     val
 }
 
-pub trait Block {
+pub trait Block: CloneBlock {
     /**
      the block's position in the world
     */
@@ -147,22 +158,28 @@ pub trait Block {
     }
 }
 
-impl PartialEq for Box<dyn Block + Send + Sync> {
-    fn eq(&self, other: &Self) -> bool {
-        self.get_block() == other.get_block()
+impl Clone for Box<dyn Block + Send + Sync> {
+    fn clone(&self) -> Box<dyn Block + Send + Sync> {
+        self.clone_box()
     }
 }
 
-impl Clone for Box<dyn Block + Send + Sync> {
-    fn clone(&self) -> Self {
-        let mut v = create_block_default(self.get_block(), self.get_absolute_position());
-        v.copy_into_self(self);
+trait CloneBlock {
+    fn clone_box(&self) -> Box<dyn Block + Send + Sync>;
+}
 
-        v
+impl<T> CloneBlock for T
+where
+    T: 'static + Block + Clone + Send + Sync,
+{
+    fn clone_box(&self) -> Box<dyn Block + Send + Sync> {
+        Box::new(self.clone())
     }
-    
-    fn clone_from(&mut self, source: &Self) {
-        *self = source.clone()
+}
+
+impl PartialEq for Box<dyn Block + Send + Sync> {
+    fn eq(&self, other: &Self) -> bool {
+        self.get_block() == other.get_block()
     }
 }
 

@@ -18,9 +18,15 @@
         "filter": "nearest"
     },
     {
-        "path": "textures/stone.png",
+        "path": "textures/diamond_ore.png",
         "alias": "stone",
         "type": "diffuse",
+        "filter": "nearest"
+    },
+    {
+        "path": "textures/default_ore_emissive.png",
+        "alias": "default_ore_emissive",
+        "type": "emissive",
         "filter": "nearest"
     },
     {
@@ -36,7 +42,7 @@
         "filter": "nearest"
     },
     {
-        "path": "textures/leaf.png",
+        "path": "textures/arcane_leaf.png",
         "alias": "leaf",
         "type": "diffuse",
         "filter": "nearest"

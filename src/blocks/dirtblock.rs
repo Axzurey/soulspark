@@ -3,7 +3,7 @@ use cgmath::Vector3;
 use crate::engine::texture_loader::get_indices_from_texture;
 
 use super::block::Block;
-
+#[derive(Clone)]
 pub struct DirtBlock {
     relative_position: Vector3<u32>,
     absolute_position: Vector3<i32>,

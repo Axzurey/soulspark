@@ -4,7 +4,8 @@
 
 struct VertexInput {
     @location(0) d0: u32,
-    @location(1) illumination: u32
+    @location(1) d1: u32,
+    @location(2) illumination: u32
 }
 
 struct ChunkData {
@@ -28,7 +29,7 @@ fn vs_main(vertex: VertexInput, chunk_data: ChunkData) -> VertexOutput {
 
     var normalid = extractBits(vertex.d0, 15u, 3u);
     var uvi = extractBits(vertex.d0, 18u, 2u);
-    var diffuse_texure_index = extractBits(vertex.d0, 20u, 6u);
+    var diffuse_texure_index = extractBits(vertex.d1, 0u, 16u);
 
     var normal_texure_index = 0u;
     var emissive_texure_index = 0u;
@@ -74,6 +75,11 @@ fn vs_main(vertex: VertexInput, chunk_data: ChunkData) -> VertexOutput {
         f32(chunk_data.position_sliced.z * 16 + z), 
         1.0
     );
+    out.worldpos = vec3(
+        f32(chunk_data.position_sliced.x * 16 + x), 
+        f32(chunk_data.position_sliced.y * 16 + y), 
+        f32(chunk_data.position_sliced.z * 16 + z), 
+    );
 
     return out;
 }
@@ -85,7 +91,8 @@ struct VertexOutput {
     @location(4) diffuse_texture_index: u32,
     @location(5) normal_texture_index: u32,
     @location(6) emissive_texture_index: u32,
-    @location(7) illumination: u32
+    @location(7) illumination: u32,
+    @location(8) worldpos: vec3<f32>
 };
 
 @group(0) @binding(0)
@@ -114,10 +121,25 @@ struct Camera {
 @group(1) @binding(0)
 var<uniform> camera: Camera;
 
-
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let diffuse_color = textureSampleLevel(diffuse_texture_array[in.diffuse_texture_index], diffuse_sampler_array[in.diffuse_texture_index], in.tex_coords, 0.0).rgba;
+    var tileUV: vec2<f32>;
+    let absNormal = abs(in.normal);
+    var texCoord: vec2<f32>;
+
+    //check which axis it is
+    if (absNormal.x > absNormal.y && absNormal.x > absNormal.z) {
+        tileUV = vec2(in.worldpos.z, in.worldpos.y);
+        texCoord = fract(1 - tileUV);
+    } else if (absNormal.y > absNormal.x && absNormal.y > absNormal.z) {
+        tileUV = vec2(in.worldpos.x, in.worldpos.z);
+        texCoord = fract(tileUV);
+    } else {
+        tileUV = vec2(in.worldpos.x, in.worldpos.y);
+        texCoord = fract(1 - tileUV);
+    }
+
+    let diffuse_color = textureSampleLevel(diffuse_texture_array[in.diffuse_texture_index], diffuse_sampler_array[in.diffuse_texture_index], texCoord, 0.0).rgba;
 
     let sunlight = f32(extractBits(in.illumination, 24u, 4u));
 

@@ -1,10 +1,9 @@
-use std::sync::{Arc, RwLock};
 use super::super::{guiobject::GuiObject, uistate::GuiPosition};
 use cgmath::Vector2;
 use eframe::egui::{self, Id};
 
 pub struct Frame {
-    children: Vec<Arc<RwLock<dyn GuiObject>>>,
+    children: Vec<Box<dyn GuiObject>>,
     name: String,
     id: Id,
     position: GuiPosition,
@@ -13,23 +12,26 @@ pub struct Frame {
 }
 
 impl Frame {
-    pub fn new(name: String) -> Arc<RwLock<Self>> {
-        Arc::new(RwLock::new(Self {
+    pub fn new(name: String) -> Box<Self> {
+        Box::new(Self {
             children: Vec::new(),
             name: name.clone(),
             id: Id::new(name),
             position: GuiPosition::Position(Vector2::new(0., 0.)),
             enabled: true,
             interactable: true
-        }))
+        })
     }
-    pub fn add_child(&mut self, child: Arc<RwLock<dyn GuiObject>>) {
+    pub fn add_child(&mut self, child: Box<dyn GuiObject>) {
         self.children.push(child);
     }
 }
 
 impl GuiObject for Frame {
-    fn get_children(&self) -> &Vec<Arc<RwLock<dyn GuiObject>>> {
+    fn get_children_mut(&mut self) -> &mut Vec<Box<dyn GuiObject>> {
+        &mut self.children
+    }
+    fn get_children(&self) -> &Vec<Box<dyn GuiObject>> {
         &self.children
     }
     fn get_name(&self) -> &str {
@@ -57,7 +59,7 @@ impl GuiObject for Frame {
 
         area.show(ctx, |ui| {
             for i in 0..self.children.len() {
-                self.children[i].write().unwrap().render(ctx, ui);
+                self.children[i].render(ctx, ui);
             }
         });
     }

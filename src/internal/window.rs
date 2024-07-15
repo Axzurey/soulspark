@@ -16,7 +16,7 @@ pub struct GameWindow<'a> {
     pub renderer: MainRenderer,
     pub gui_renderer: GuiRenderer,
     pub camera_bindgroup_layout: wgpu::BindGroupLayout,
-    pub screenui: Arc<RwLock<ScreenUi>>
+    pub screenui: Box<ScreenUi>
 }
 
 impl<'a> GameWindow<'a> {
@@ -49,8 +49,7 @@ impl<'a> GameWindow<'a> {
              | wgpu::Features::SAMPLED_TEXTURE_AND_STORAGE_BUFFER_ARRAY_NON_UNIFORM_INDEXING 
              | wgpu::Features::BGRA8UNORM_STORAGE | wgpu::Features::DEPTH_CLIP_CONTROL,
             required_limits: wgpu::Limits {
-                max_sampled_textures_per_shader_stage: 121,
-                max_samplers_per_shader_stage: 121,
+                max_sampled_textures_per_shader_stage: 961,
                 max_bind_groups: 5,
                 ..Default::default()
             },
@@ -130,7 +129,7 @@ impl<'a> GameWindow<'a> {
             label: Some("Primary Encoder")
         });
 
-        self.renderer.render_surface(&self.device, &self.queue, &mut output, &view, &mut encoder, &workspace.current_camera.bindgroup, &workspace);
+        self.renderer.render_surface(&self.device, &self.queue, &mut output, &view, &mut encoder, workspace);
 
         let screen_descriptor = ScreenDescriptor {
             size_in_pixels: [self.window_size.width, self.window_size.height],
@@ -138,7 +137,7 @@ impl<'a> GameWindow<'a> {
         };
 
         self.gui_renderer.draw(&self.device, &self.queue, &mut encoder, &self.window, &view, screen_descriptor, |ctx| {
-            self.screenui.write().unwrap().render(ctx)
+            self.screenui.render(ctx)
         });
 
         self.queue.submit(std::iter::once(encoder.finish()));
